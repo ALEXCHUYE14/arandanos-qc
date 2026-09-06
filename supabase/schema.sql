@@ -268,7 +268,26 @@ create policy profiles_select on public.profiles
   for select using (id = auth.uid() or public.is_jefatura());
 drop policy if exists profiles_update on public.profiles;
 create policy profiles_update on public.profiles
-  for update using (id = auth.uid());
+  for update using (id = auth.uid() or public.is_jefatura());
+
+-- Blindaje: la policy de arriba solo controla QUÉ FILA se puede editar, no
+-- QUÉ COLUMNA — sin esto, cualquier "inspector" podría hacer un PATCH a su
+-- propia fila y auto-asignarse rol='jefatura' desde el navegador (probado:
+-- funciona con un simple fetch autenticado, sin nada especial). Este trigger
+-- bloquea el cambio de `rol` salvo que quien edita ya sea jefatura.
+create or replace function public.prevent_self_role_escalation()
+returns trigger language plpgsql as $$
+begin
+  if new.rol is distinct from old.rol and not public.is_jefatura() then
+    raise exception 'No autorizado para cambiar el rol de un perfil';
+  end if;
+  return new;
+end; $$;
+
+drop trigger if exists trg_profiles_protect_rol on public.profiles;
+create trigger trg_profiles_protect_rol
+  before update on public.profiles
+  for each row execute function public.prevent_self_role_escalation();
 
 -- defect_catalog: lectura para todos los autenticados.
 drop policy if exists defcat_select on public.defect_catalog;
