@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(cd \"D:\\\\CRM Para Negocios\\\\arandanos-qc\"; & \"$env:ProgramFiles\\\\nodejs\\\\npm.cmd\" view next versions --json 2>&1 | Out-File -Encoding utf8 next_versions.json; & \"$env:ProgramFiles\\\\nodejs\\\\npm.cmd\" view eslint-config-next versions --json 2>&1 | Out-File -Encoding utf8 eslintcfg_versions.json; & \"$env:ProgramFiles\\\\nodejs\\\\npm.cmd\" view jspdf versions --json 2>&1 | Out-File -Encoding utf8 jspdf_versions.json)",
-      "PowerShell(cd \"D:\\\\CRM Para Negocios\\\\arandanos-qc\"; $v = Get-Content next_versions.json -Raw | ConvertFrom-Json; $v | Where-Object { $_ -match '^15\\\\.5\\\\.\\\\d+$' } | Select-Object -Last 10; \"---latest overall---\"; $v[-5..-1])",
-      "PowerShell(cd \"D:\\\\CRM Para Negocios\\\\arandanos-qc\"; $v = Get-Content eslintcfg_versions.json -Raw | ConvertFrom-Json; $v | Where-Object { $_ -match '^15\\\\.5\\\\.\\\\d+$' } | Select-Object -Last 10; \"---jspdf---\"; $j = Get-Content jspdf_versions.json -Raw | ConvertFrom-Json; $j | Where-Object { $_ -match '^4\\\\.' } | Select-Object -Last 10)"
-    ]
-  }
-}

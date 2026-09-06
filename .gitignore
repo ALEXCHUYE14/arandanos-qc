@@ -22,3 +22,9 @@ npm-debug.log*
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*
+
+# Claude Code (config local, no del proyecto)
+.claude/
