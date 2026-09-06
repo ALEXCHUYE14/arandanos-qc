@@ -12,22 +12,25 @@ import {
   Boxes,
   CheckCircle2,
   AlertTriangle,
+  Radio,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select, Label } from "@/components/ui/input";
 import { DescarteEmpacadorChart, TendenciaSemanalChart } from "@/components/dashboard/Charts";
-import { useMuestras } from "@/hooks/useMuestras";
-import { computeMuestra } from "@/lib/calc";
+import { useMuestrasCloud } from "@/hooks/useMuestrasCloud";
+import { computeMuestra, computeRiesgo } from "@/lib/calc";
 import { overview, porEmpacador, porSemana } from "@/lib/analytics";
 import { downloadXlsx, copyManyToClipboard } from "@/lib/excel";
 import { fullSync, resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
 import { isSupabaseConfigured } from "@/lib/supabase";
-import { fmtDateUI } from "@/lib/utils";
+import { cn, fmtDateUI } from "@/lib/utils";
 
 export default function DashboardPage() {
-  const all = useMuestras() ?? [];
+  const { data: all, error: cloudError, live } = useMuestrasCloud();
   const [fEmpacador, setFEmpacador] = useState("");
   const [fSemana, setFSemana] = useState("");
   const [fEstado, setFEstado] = useState("");
@@ -76,6 +79,7 @@ export default function DashboardPage() {
         const cumple = computeMuestra(m).cumple;
         if (fEstado === "cumple" && !cumple) return false;
         if (fEstado === "no" && cumple) return false;
+        if (fEstado === "riesgo" && !computeRiesgo(m)) return false;
       }
       return true;
     });
@@ -84,6 +88,16 @@ export default function DashboardPage() {
   const stats = useMemo(() => overview(filtered), [filtered]);
   const emp = useMemo(() => porEmpacador(filtered), [filtered]);
   const sem = useMemo(() => porSemana(filtered), [filtered]);
+  const enRiesgo = useMemo(() => filtered.filter(computeRiesgo).length, [filtered]);
+
+  // Variación del % de descarte respecto de la semana anterior (solo tiene
+  // sentido si hay al menos 2 semanas distintas en los datos filtrados).
+  const descarteDelta = useMemo(() => {
+    if (sem.length < 2) return null;
+    const ult = sem[sem.length - 1];
+    const prev = sem[sem.length - 2];
+    return { valor: ult.pctDescarte - prev.pctDescarte, semana: ult.semana };
+  }, [sem]);
 
   async function copiarTodo() {
     await copyManyToClipboard(filtered);
@@ -109,8 +123,17 @@ export default function DashboardPage() {
           <Link href="/" className="mb-1 flex items-center gap-1 text-xs text-muted hover:text-ink">
             <Home className="h-3.5 w-3.5" /> Inicio
           </Link>
-          <h1 className="text-xl font-bold text-ink">Jefatura de Calidad</h1>
-          <p className="text-xs text-muted">Supervisión de inspección en línea de empaque</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl font-bold text-ink">Jefatura de Calidad</h1>
+            {live && (
+              <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
+                <Radio className="h-3 w-3" /> en vivo
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted">
+            {cloudError ? cloudError : "Supervisión de inspección en línea de empaque"}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {conflictos > 0 && (
@@ -134,11 +157,31 @@ export default function DashboardPage() {
       </div>
 
       {/* KPIs */}
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard icon={<Boxes className="h-5 w-5" />} label="Muestras" value={String(stats.totalMuestras)} sub={`${stats.totalClamshells} clamshells`} />
         <StatCard icon={<CheckCircle2 className="h-5 w-5 text-success" />} label="Cumplimiento" value={`${(stats.pctCumplimiento * 100).toFixed(0)}%`} sub="muestras conformes" />
-        <StatCard icon={<AlertTriangle className="h-5 w-5 text-danger" />} label="Descarte prom." value={`${(stats.pctDescartePromedio * 100).toFixed(1)}%`} sub="por muestra" />
+        <StatCard
+          icon={<AlertTriangle className="h-5 w-5 text-danger" />}
+          label="Descarte prom."
+          value={`${(stats.pctDescartePromedio * 100).toFixed(1)}%`}
+          sub={
+            descarteDelta ? (
+              <span className={cn("flex items-center gap-0.5", descarteDelta.valor > 0 ? "text-danger" : "text-success")}>
+                {descarteDelta.valor > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {Math.abs(descarteDelta.valor * 100).toFixed(1)} pp vs sem. {sem[sem.length - 2]?.semana}
+              </span>
+            ) : (
+              "por muestra"
+            )
+          }
+        />
         <StatCard icon={<CheckCircle2 className="h-5 w-5" />} label="Cat 1 prom." value={`${(stats.pctCat1Promedio * 100).toFixed(1)}%`} sub="calidad primera" />
+        <StatCard
+          icon={<AlertTriangle className="h-5 w-5 text-warning" />}
+          label="En riesgo"
+          value={String(enRiesgo)}
+          sub="cumplen, pero cerca del límite"
+        />
       </div>
 
       {/* Filtros */}
@@ -168,6 +211,7 @@ export default function DashboardPage() {
               <option value="">Todos</option>
               <option value="cumple">CUMPLE</option>
               <option value="no">NO CUMPLE</option>
+              <option value="riesgo">En riesgo</option>
             </Select>
           </div>
           <div className="flex items-end">
@@ -215,6 +259,7 @@ export default function DashboardPage() {
               <tbody>
                 {filtered.map((m) => {
                   const r = computeMuestra(m);
+                  const riesgo = computeRiesgo(m);
                   return (
                     <tr key={m.id} className="border-b border-line/60 hover:bg-base/50">
                       <td className="px-3 py-2 font-mono font-semibold text-ink">{m.codigo}</td>
@@ -227,6 +272,7 @@ export default function DashboardPage() {
                       <td className="px-3 py-2 text-center">
                         <div className="flex flex-col items-center gap-1">
                           <Badge variant={r.cumple ? "success" : "danger"}>{r.cumple ? "CUMPLE" : "NO CUMPLE"}</Badge>
+                          {riesgo && <Badge variant="warning">en riesgo</Badge>}
                           {m.sync === "conflict" && <Badge variant="danger">conflicto</Badge>}
                         </div>
                       </td>
@@ -277,7 +323,17 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ icon, label, value, sub }: { icon: React.ReactNode; label: string; value: string; sub: string }) {
+function StatCard({
+  icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub: React.ReactNode;
+}) {
   return (
     <Card>
       <CardContent className="p-4">

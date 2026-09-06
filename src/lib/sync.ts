@@ -84,7 +84,7 @@ function clamshellToRow(cs: Clamshell) {
 }
 
 /** Reconstituye una Muestra local a partir de las filas planas de Supabase. */
-function rowToMuestra(r: any, clamshellRows: any[]): Muestra {
+export function rowToMuestra(r: any, clamshellRows: any[]): Muestra {
   return {
     id: r.id,
     codigo: r.codigo,

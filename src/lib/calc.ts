@@ -146,6 +146,35 @@ export function computeMuestra(m: Muestra): MuestraResult {
   };
 }
 
+/**
+ * % de una tolerancia a partir del cual se considera "en riesgo" — todavía
+ * CUMPLE, pero cerca del límite. 0.8 = dentro del 20% superior del umbral.
+ * Es un valor por defecto razonable, no un dato del Excel maestro: ajustar
+ * acá si Jefatura de Calidad prefiere otro margen de alerta temprana.
+ */
+const RISK_THRESHOLD = 0.8;
+
+/**
+ * true si la muestra CUMPLE pero al menos un rollup (o la suma total) de
+ * alguno de sus clamshells ya está a partir de RISK_THRESHOLD de su tolerancia
+ * máxima — alerta temprana antes de que la próxima muestra del mismo lote
+ * pase a NO CUMPLE. Una muestra que ya es NO CUMPLE no se marca "en riesgo":
+ * ese caso ya se ve con el badge de NO CUMPLE.
+ */
+export function computeRiesgo(m: Muestra): boolean {
+  const r = computeMuestra(m);
+  if (!r.cumple) return false;
+  return r.clamshells.some((cs) => {
+    if (cs.sumaPct >= TOLERANCE_SUMA.max * RISK_THRESHOLD) return true;
+    return ROLLUP_ORDER.some((k) => {
+      const tol = TOLERANCE_BY_KEY[k];
+      // Tolerancia 0 (ej. PUDRICIÓN/HONGO): cualquier ocurrencia ya es NO
+      // CUMPLE, no hay una zona intermedia "en riesgo" que marcar acá.
+      return !!tol && tol.max > 0 && cs.rollupPct[k] >= tol.max * RISK_THRESHOLD;
+    });
+  });
+}
+
 /** Formatea una fracción 0-1 como porcentaje con 2 decimales (ej. 0.1212 -> "12.12%"). */
 export function fmtPct(fraction: number, decimals = 2): string {
   return `${(fraction * 100).toFixed(decimals)}%`;
