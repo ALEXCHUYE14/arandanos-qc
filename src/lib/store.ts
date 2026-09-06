@@ -4,6 +4,7 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import type { AppUserProfile } from "./types";
 
 interface SessionState {
   inspectorNombre: string;
@@ -25,6 +26,27 @@ export const useSession = create<SessionState>()(
     { name: "arandanos-session" }
   )
 );
+
+/**
+ * Sesión de autenticación (Supabase Auth). En modo local (sin backend
+ * configurado) queda en estado "anonymous" para siempre y la app sigue
+ * funcionando como antes, identificando al inspector vía `useSession`.
+ */
+interface AuthState {
+  status: "loading" | "authenticated" | "anonymous";
+  userId: string | null;
+  profile: AppUserProfile | null;
+  setAuth: (userId: string | null, profile: AppUserProfile | null) => void;
+  setAnonymous: () => void;
+}
+
+export const useAuth = create<AuthState>((set) => ({
+  status: "loading",
+  userId: null,
+  profile: null,
+  setAuth: (userId, profile) => set({ status: "authenticated", userId, profile }),
+  setAnonymous: () => set({ status: "anonymous", userId: null, profile: null }),
+}));
 
 interface NetState {
   online: boolean;

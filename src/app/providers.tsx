@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNet } from "@/lib/store";
 import { fullSync } from "@/lib/sync";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { useAuthSync } from "@/hooks/useAuthSync";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [qc] = useState(
@@ -14,6 +15,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       })
   );
 
+  useAuthSync();
   const { setOnline, setSyncing, setLastSync } = useNet();
   const syncingRef = useRef(false);
 

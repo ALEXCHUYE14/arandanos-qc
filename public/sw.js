@@ -2,8 +2,8 @@
  * Los datos de inspección se persisten aparte en IndexedDB (Dexie);
  * este SW solo asegura que la app cargue sin conexión. */
 
-const CACHE = "arandanos-qc-v1";
-const APP_SHELL = ["/", "/inspector", "/dashboard", "/manifest.json"];
+const CACHE = "arandanos-qc-v2";
+const APP_SHELL = ["/", "/login", "/inspector", "/dashboard", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

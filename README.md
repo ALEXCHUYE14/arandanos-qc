@@ -5,9 +5,9 @@ clamshell en planta empaquetadora de arándanos. Dos roles: **Inspector de campo
 (captura móvil) y **Jefatura de Calidad** (dashboard + reportería + sincronización
 con el Excel maestro).
 
-Construido con **Next.js 14 (App Router, TypeScript)**, **Tailwind CSS**,
-**Supabase** (PostgreSQL + RLS + Realtime), **Dexie/IndexedDB** (offline),
-**Zustand** + **TanStack Query**, **Recharts**, y export **PDF/PNG** + **Excel**.
+Construido con **Next.js 15 (App Router, TypeScript)**, **Tailwind CSS**,
+**Supabase** (PostgreSQL + RLS + Realtime + Auth), **Dexie/IndexedDB** (offline),
+**Zustand**, **Recharts**, y export **PDF/PNG** + **Excel**.
 
 ---
 
@@ -36,12 +36,20 @@ Comandos útiles: `npm run build`, `npm start`, `npm run typecheck`, `npm run li
    y activa **Realtime**.
 3. En **Project Settings → API** copia `URL` y `anon key` a tu `.env.local`
    (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
-4. Crea usuarios en **Authentication**. Para marcar a la Jefa de Calidad como
-   `jefatura`:
+4. Crea usuarios en **Authentication → Users → Add user** (correo + contraseña).
+   No hay auto-registro: las cuentas las da de alta un administrador desde ahí.
+   Cada usuario nuevo obtiene automáticamente una fila en `profiles` con
+   `rol = 'inspector'` (trigger `handle_new_user`). Para marcar a alguien como
+   Jefatura de Calidad:
    ```sql
    update public.profiles set rol = 'jefatura'
    where id = (select id from auth.users where email = 'betzy@empresa.com');
    ```
+5. Con `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` configurados, `/login` pasa a ser
+   obligatorio para entrar (lo aplica `src/middleware.ts`) y `/dashboard` queda
+   restringido a perfiles `jefatura` — un `inspector` que intente entrar es
+   redirigido a `/inspector`. Sin esas variables, el sistema sigue 100% abierto
+   y local, como antes.
 
 ---
 
@@ -98,8 +106,10 @@ vercel --prod     # producción
 
 ```
 src/
+  middleware.ts            Protección de rutas (login obligatorio, /dashboard = jefatura)
   app/                     Rutas (Next App Router)
     page.tsx               Selector de rol
+    login/                 Login (email + contraseña, Supabase Auth)
     inspector/             Lista + captura móvil
     reporte/[id]/          Reporte visual + export PDF/PNG
     dashboard/             Panel de Jefatura de Calidad
@@ -108,6 +118,7 @@ src/
     inspector/             Captura (contador de defectos, formularios)
     report/                Reporte visual 1:1
     dashboard/             Gráficos (Recharts)
+    StatusBar.tsx          Estado de conexión/sync + sesión activa (logout)
   lib/
     defects.ts             Catálogo de 45 defectos + tolerancias
     columns.ts             Mapa exacto de las 124 columnas
@@ -115,7 +126,11 @@ src/
     excel.ts               Copiar TSV + export XLSX
     db.ts / sync.ts        IndexedDB (Dexie) + sincronización Supabase
     analytics.ts           Agregaciones del dashboard
-  hooks/                   Acceso a datos (dexie-react-hooks)
+    supabase.ts            Cliente de navegador (cookies vía @supabase/ssr)
+    supabase-middleware.ts Cliente para middleware.ts (Edge)
+  hooks/
+    useMuestras.ts         Acceso a datos (dexie-react-hooks)
+    useAuthSync.ts         Sincroniza sesión de Supabase Auth → store
 supabase/schema.sql        Script completo de base de datos
 public/                    manifest, service worker, íconos PWA
 ```
