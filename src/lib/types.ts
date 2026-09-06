@@ -10,7 +10,7 @@
 
 export type Turno = "DÍA" | "NOCHE";
 export type Estandar = "CUMPLE" | "NO CUMPLE";
-export type SyncStatus = "pending" | "synced" | "error";
+export type SyncStatus = "pending" | "synced" | "error" | "conflict";
 
 /** Conteo de bayas por defecto: { [defectKey]: number }. */
 export type DefectCounts = Record<string, number>;
@@ -70,6 +70,14 @@ export interface Muestra {
   updatedAt: string;
   createdBy: string; // uid o nombre del inspector
   sync: SyncStatus;
+  /**
+   * `updated_at` del servidor la última vez que este registro se sincronizó
+   * con éxito (null = todavía no existe en el servidor). Es la base contra la
+   * que `upsert_muestra_full` detecta conflictos: si alguien más cambió la
+   * muestra en el servidor después de esto, la RPC rechaza el push y marca
+   * `sync: "conflict"` en vez de pisar silenciosamente ese cambio ajeno.
+   */
+  baseUpdatedAt: string | null;
 }
 
 /** Resultado del cálculo por clamshell. */

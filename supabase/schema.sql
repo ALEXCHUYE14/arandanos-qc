@@ -172,6 +172,108 @@ create trigger trg_muestras_touch
   for each row execute function public.touch_updated_at();
 
 -- =====================================================================
+--  RPC: escritura atómica de una muestra + sus clamshells
+--
+--  Reemplaza el patrón anterior del cliente (upsert de la muestra, luego
+--  DELETE de todos sus clamshells, luego INSERT de los nuevos — 3 llamadas
+--  sueltas, sin transacción: si la app se queda sin señal entre el DELETE y
+--  el INSERT, la muestra queda sin clamshells en el servidor). Acá todo pasa
+--  dentro de la transacción implícita de la función: o se aplica todo, o no
+--  se aplica nada.
+--
+--  También resuelve conflictos de edición concurrente: si p_expected_updated_at
+--  no coincide con el updated_at actual del servidor (alguien más lo cambió
+--  después de que este dispositivo bajó su copia), no escribe nada y devuelve
+--  is_conflict = true en vez de pisar silenciosamente el cambio ajeno.
+--  Pasar p_expected_updated_at = null fuerza la escritura sin chequear
+--  (se usa para "conservar mi versión" al resolver un conflicto a mano).
+-- =====================================================================
+create or replace function public.upsert_muestra_full(
+  p_muestra jsonb,
+  p_clamshells jsonb,
+  p_expected_updated_at timestamptz default null
+)
+returns table (updated_at timestamptz, is_conflict boolean)
+language plpgsql as $$
+declare
+  v_id uuid := (p_muestra->>'id')::uuid;
+  v_current_updated_at timestamptz;
+begin
+  select m.updated_at into v_current_updated_at
+  from public.muestras m where m.id = v_id;
+
+  if v_current_updated_at is not null
+     and p_expected_updated_at is not null
+     and v_current_updated_at <> p_expected_updated_at then
+    return query select v_current_updated_at, true;
+    return;
+  end if;
+
+  insert into public.muestras (
+    id, codigo, id_maestro, semana, fecha_cosecha, fecha_empaque, n_planta, linea, turno,
+    productor, cliente, destino, formato, calibre, embalaje_caja, embalaje_clamshell,
+    variedad, intervalo_cosecha, dni_inspector, inspector, supervisor, dni_empacador,
+    empacador, peso_establecido, medida_correctiva, observaciones, created_at, created_by
+  )
+  values (
+    v_id,
+    p_muestra->>'codigo', (p_muestra->>'id_maestro')::int, (p_muestra->>'semana')::int,
+    (p_muestra->>'fecha_cosecha')::date, (p_muestra->>'fecha_empaque')::date,
+    (p_muestra->>'n_planta')::int, p_muestra->>'linea', p_muestra->>'turno',
+    p_muestra->>'productor', p_muestra->>'cliente', p_muestra->>'destino',
+    p_muestra->>'formato', p_muestra->>'calibre', p_muestra->>'embalaje_caja',
+    p_muestra->>'embalaje_clamshell', p_muestra->>'variedad', p_muestra->>'intervalo_cosecha',
+    p_muestra->>'dni_inspector', p_muestra->>'inspector', p_muestra->>'supervisor',
+    p_muestra->>'dni_empacador', p_muestra->>'empacador',
+    (p_muestra->>'peso_establecido')::numeric, p_muestra->>'medida_correctiva',
+    p_muestra->>'observaciones', coalesce((p_muestra->>'created_at')::timestamptz, now()),
+    p_muestra->>'created_by'
+  )
+  on conflict (id) do update set
+    codigo = excluded.codigo, id_maestro = excluded.id_maestro, semana = excluded.semana,
+    fecha_cosecha = excluded.fecha_cosecha, fecha_empaque = excluded.fecha_empaque,
+    n_planta = excluded.n_planta, linea = excluded.linea, turno = excluded.turno,
+    productor = excluded.productor, cliente = excluded.cliente, destino = excluded.destino,
+    formato = excluded.formato, calibre = excluded.calibre, embalaje_caja = excluded.embalaje_caja,
+    embalaje_clamshell = excluded.embalaje_clamshell, variedad = excluded.variedad,
+    intervalo_cosecha = excluded.intervalo_cosecha, dni_inspector = excluded.dni_inspector,
+    inspector = excluded.inspector, supervisor = excluded.supervisor,
+    dni_empacador = excluded.dni_empacador, empacador = excluded.empacador,
+    peso_establecido = excluded.peso_establecido, medida_correctiva = excluded.medida_correctiva,
+    observaciones = excluded.observaciones;
+
+  delete from public.clamshells c
+  where c.muestra_id = v_id
+    and c.id not in (
+      select (elem->>'id')::uuid from jsonb_array_elements(p_clamshells) elem
+    );
+
+  insert into public.clamshells (
+    id, muestra_id, n_clamshell, peso, n_bayas_evaluadas, counts, nota,
+    peso_correcto, trazabilidad_conforme, calibre_correcto, observacion
+  )
+  select
+    (elem->>'id')::uuid, v_id, (elem->>'n_clamshell')::int, (elem->>'peso')::numeric,
+    coalesce((elem->>'n_bayas_evaluadas')::int, 99), coalesce(elem->'counts', '{}'::jsonb),
+    (elem->>'nota')::int, coalesce((elem->>'peso_correcto')::boolean, true),
+    coalesce((elem->>'trazabilidad_conforme')::boolean, true),
+    coalesce((elem->>'calibre_correcto')::boolean, true), elem->>'observacion'
+  from jsonb_array_elements(p_clamshells) elem
+  on conflict (id) do update set
+    n_clamshell = excluded.n_clamshell, peso = excluded.peso,
+    n_bayas_evaluadas = excluded.n_bayas_evaluadas, counts = excluded.counts,
+    nota = excluded.nota, peso_correcto = excluded.peso_correcto,
+    trazabilidad_conforme = excluded.trazabilidad_conforme,
+    calibre_correcto = excluded.calibre_correcto, observacion = excluded.observacion;
+
+  select m.updated_at into v_current_updated_at from public.muestras m where m.id = v_id;
+  return query select v_current_updated_at, false;
+end;
+$$;
+
+grant execute on function public.upsert_muestra_full(jsonb, jsonb, timestamptz) to authenticated;
+
+-- =====================================================================
 --  VISTA: estadísticas por clamshell (expande counts jsonb)
 -- =====================================================================
 create or replace view public.clamshell_stats as

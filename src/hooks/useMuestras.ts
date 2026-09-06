@@ -81,6 +81,7 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
     // (sin login) cae al nombre de texto libre, igual que antes.
     createdBy: auth.userId || inspectorNombre || "inspector",
     sync: "pending",
+    baseUpdatedAt: null,
     ...partial,
   };
   await saveMuestraLocal(m);

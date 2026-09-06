@@ -22,7 +22,7 @@ import { useMuestras } from "@/hooks/useMuestras";
 import { computeMuestra } from "@/lib/calc";
 import { overview, porEmpacador, porSemana } from "@/lib/analytics";
 import { downloadXlsx, copyManyToClipboard } from "@/lib/excel";
-import { fullSync } from "@/lib/sync";
+import { fullSync, resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { fmtDateUI } from "@/lib/utils";
 
@@ -33,6 +33,31 @@ export default function DashboardPage() {
   const [fEstado, setFEstado] = useState("");
   const [copied, setCopied] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+
+  const conflictos = useMemo(() => all.filter((m) => m.sync === "conflict").length, [all]);
+
+  async function keepLocal(id: string) {
+    setResolvingId(id);
+    try {
+      await resolveConflictKeepLocal(id);
+    } catch (e) {
+      console.error("[conflicto] no se pudo conservar la versión local", e);
+    } finally {
+      setResolvingId(null);
+    }
+  }
+
+  async function pickServerVersion(id: string) {
+    setResolvingId(id);
+    try {
+      await resolveConflictUseServer(id);
+    } catch (e) {
+      console.error("[conflicto] no se pudo traer la versión del servidor", e);
+    } finally {
+      setResolvingId(null);
+    }
+  }
 
   const empacadores = useMemo(
     () => Array.from(new Set(all.map((m) => m.empacador).filter(Boolean))).sort(),
@@ -87,7 +112,12 @@ export default function DashboardPage() {
           <h1 className="text-xl font-bold text-ink">Jefatura de Calidad</h1>
           <p className="text-xs text-muted">Supervisión de inspección en línea de empaque</p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {conflictos > 0 && (
+            <Badge variant="danger">
+              <AlertTriangle className="h-3 w-3" /> {conflictos} conflicto(s) de sync — ver tabla
+            </Badge>
+          )}
           {isSupabaseConfigured && (
             <Button variant="outline" size="sm" onClick={sincronizar} disabled={syncing}>
               <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> Sincronizar
@@ -195,12 +225,38 @@ export default function DashboardPage() {
                       <td className="px-3 py-2 text-right text-success">{(r.pctCat1 * 100).toFixed(1)}%</td>
                       <td className="px-3 py-2 text-right font-semibold text-danger">{(r.pctDescarte * 100).toFixed(1)}%</td>
                       <td className="px-3 py-2 text-center">
-                        <Badge variant={r.cumple ? "success" : "danger"}>{r.cumple ? "CUMPLE" : "NO CUMPLE"}</Badge>
+                        <div className="flex flex-col items-center gap-1">
+                          <Badge variant={r.cumple ? "success" : "danger"}>{r.cumple ? "CUMPLE" : "NO CUMPLE"}</Badge>
+                          {m.sync === "conflict" && <Badge variant="danger">conflicto</Badge>}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Link href={`/reporte/${m.id}`}>
-                          <Button variant="ghost" size="sm"><FileText className="h-4 w-4" /></Button>
-                        </Link>
+                        {m.sync === "conflict" ? (
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={resolvingId === m.id}
+                              onClick={() => keepLocal(m.id)}
+                              title="Conservar la versión de este dispositivo"
+                            >
+                              Conservar la mía
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={resolvingId === m.id}
+                              onClick={() => pickServerVersion(m.id)}
+                              title="Descartar mis cambios y traer la versión del servidor"
+                            >
+                              Usar la del servidor
+                            </Button>
+                          </div>
+                        ) : (
+                          <Link href={`/reporte/${m.id}`}>
+                            <Button variant="ghost" size="sm"><FileText className="h-4 w-4" /></Button>
+                          </Link>
+                        )}
                       </td>
                     </tr>
                   );

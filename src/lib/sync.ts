@@ -1,17 +1,37 @@
 /**
  * SINCRONIZACIÓN BIDIRECCIONAL con Supabase.
  *
- * - push(): sube todas las muestras `pending` (upsert de muestra + clamshells).
+ * - push(): sube todas las muestras `pending` con una única llamada atómica
+ *   por muestra (RPC `upsert_muestra_full`, ver supabase/schema.sql) que
+ *   escribe la muestra + sus clamshells en una sola transacción, y detecta
+ *   si alguien más la editó en el servidor mientras tanto (conflicto).
  * - pull(): descarga muestras del servidor y las mezcla en IndexedDB.
+ * - Los fallos de red (sin señal, timeout) se reintentan con backoff
+ *   exponencial; los errores que sí llegaron a responder del servidor
+ *   (RLS, conflicto) no se reintentan — se resuelven, no se repiten.
  * - Se ejecuta al recuperar conexión y a demanda desde la UI.
- *
- * El esquema en Supabase (ver supabase/schema.sql) usa dos tablas: `muestras`
- * y `clamshells`. Aquí se aplana/reconstituye el modelo embebido local.
  */
 
 import { supabase, isSupabaseConfigured } from "./supabase";
 import { db, listMuestrasLocal } from "./db";
 import type { Muestra, Clamshell } from "./types";
+
+/**
+ * Reintenta `fn` solo cuando lanza una excepción (fallo de red / timeout:
+ * el fetch nunca llegó a responder). Si `fn` resuelve — aunque sea con un
+ * error de aplicación como `{ error }` de supabase-js — no se reintenta:
+ * el servidor sí respondió, y repetir la llamada no cambia ese resultado.
+ */
+async function withRetry<T>(fn: () => PromiseLike<T>, retries = 2, baseDelayMs = 800): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+    }
+  }
+}
 
 function muestraToRow(m: Muestra) {
   return {
@@ -63,28 +83,93 @@ function clamshellToRow(cs: Clamshell) {
   };
 }
 
-export async function pushPending(): Promise<{ ok: number; fail: number }> {
-  if (!isSupabaseConfigured || !supabase) return { ok: 0, fail: 0 };
+/** Reconstituye una Muestra local a partir de las filas planas de Supabase. */
+function rowToMuestra(r: any, clamshellRows: any[]): Muestra {
+  return {
+    id: r.id,
+    codigo: r.codigo,
+    idMaestro: r.id_maestro,
+    semana: r.semana,
+    fechaCosecha: r.fecha_cosecha,
+    fechaEmpaque: r.fecha_empaque,
+    nPlanta: r.n_planta,
+    linea: r.linea ?? "",
+    turno: r.turno,
+    productor: r.productor ?? "",
+    cliente: r.cliente ?? "",
+    destino: r.destino ?? "",
+    formato: r.formato ?? "",
+    calibre: r.calibre ?? "",
+    embalajeCaja: r.embalaje_caja ?? "",
+    embalajeClamshell: r.embalaje_clamshell ?? "",
+    variedad: r.variedad ?? "",
+    intervaloCosecha: r.intervalo_cosecha ?? "",
+    dniInspector: r.dni_inspector ?? "",
+    inspector: r.inspector ?? "",
+    supervisor: r.supervisor ?? "",
+    dniEmpacador: r.dni_empacador ?? "",
+    empacador: r.empacador ?? "",
+    pesoEstablecido: r.peso_establecido,
+    medidaCorrectiva: r.medida_correctiva ?? "",
+    observaciones: r.observaciones ?? "",
+    clamshells: clamshellRows
+      .map((c: any) => ({
+        id: c.id,
+        muestraId: c.muestra_id,
+        nClamshell: c.n_clamshell,
+        peso: c.peso,
+        nBayasEvaluadas: c.n_bayas_evaluadas,
+        counts: c.counts || {},
+        nota: c.nota,
+        pesoCorrecto: c.peso_correcto,
+        trazabilidadConforme: c.trazabilidad_conforme,
+        calibreCorrecto: c.calibre_correcto,
+        observacion: c.observacion ?? "",
+      }))
+      .sort((a: Clamshell, b: Clamshell) => a.nClamshell - b.nClamshell),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    createdBy: r.created_by ?? "",
+    sync: "synced",
+    baseUpdatedAt: r.updated_at,
+  };
+}
+
+/** Sube una muestra + sus clamshells en una sola llamada atómica.
+ *  `force = true` ignora el chequeo de conflicto (se usa al resolver uno a mano). */
+async function pushOne(m: Muestra, force = false): Promise<"ok" | "conflict"> {
+  const { data, error } = await withRetry(() =>
+    supabase!.rpc("upsert_muestra_full", {
+      p_muestra: muestraToRow(m),
+      p_clamshells: m.clamshells.map(clamshellToRow),
+      p_expected_updated_at: force ? null : m.baseUpdatedAt,
+    })
+  );
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (row?.is_conflict) {
+    m.sync = "conflict";
+    await db.muestras.put(m);
+    return "conflict";
+  }
+  m.sync = "synced";
+  m.baseUpdatedAt = row?.updated_at ?? m.baseUpdatedAt;
+  await db.muestras.put(m);
+  return "ok";
+}
+
+export async function pushPending(): Promise<{ ok: number; fail: number; conflict: number }> {
+  if (!isSupabaseConfigured || !supabase) return { ok: 0, fail: 0, conflict: 0 };
   const pending = (await listMuestrasLocal()).filter((m) => m.sync === "pending");
   let ok = 0;
   let fail = 0;
+  let conflict = 0;
 
   for (const m of pending) {
     try {
-      const { error: e1 } = await supabase.from("muestras").upsert(muestraToRow(m));
-      if (e1) throw e1;
-
-      // Reemplaza los clamshells del servidor por los locales.
-      await supabase.from("clamshells").delete().eq("muestra_id", m.id);
-      const rows = m.clamshells.map(clamshellToRow);
-      if (rows.length) {
-        const { error: e2 } = await supabase.from("clamshells").insert(rows);
-        if (e2) throw e2;
-      }
-
-      m.sync = "synced";
-      await db.muestras.put(m);
-      ok++;
+      const result = await pushOne(m);
+      if (result === "conflict") conflict++;
+      else ok++;
     } catch (err) {
       console.error("[sync] push error", m.codigo, err);
       m.sync = "error";
@@ -92,18 +177,17 @@ export async function pushPending(): Promise<{ ok: number; fail: number }> {
       fail++;
     }
   }
-  return { ok, fail };
+  return { ok, fail, conflict };
 }
 
 export async function pullAll(): Promise<number> {
   if (!isSupabaseConfigured || !supabase) return 0;
-  const { data: muestras, error } = await supabase
-    .from("muestras")
-    .select("*")
-    .order("updated_at", { ascending: false });
+  const { data: muestras, error } = await withRetry(() =>
+    supabase!.from("muestras").select("*").order("updated_at", { ascending: false })
+  );
   if (error || !muestras) return 0;
 
-  const { data: clamshells } = await supabase.from("clamshells").select("*");
+  const { data: clamshells } = await withRetry(() => supabase!.from("clamshells").select("*"));
   const byMuestra = new Map<string, any[]>();
   (clamshells || []).forEach((c: any) => {
     const arr = byMuestra.get(c.muestra_id) || [];
@@ -114,65 +198,47 @@ export async function pullAll(): Promise<number> {
   let merged = 0;
   for (const r of muestras as any[]) {
     const local = await db.muestras.get(r.id);
-    // No pisar cambios locales aún no sincronizados.
-    if (local && local.sync === "pending") continue;
+    // No pisar cambios locales aún no sincronizados, ni un conflicto que el
+    // usuario todavía no resolvió a mano.
+    if (local && (local.sync === "pending" || local.sync === "conflict")) continue;
 
-    const m: Muestra = {
-      id: r.id,
-      codigo: r.codigo,
-      idMaestro: r.id_maestro,
-      semana: r.semana,
-      fechaCosecha: r.fecha_cosecha,
-      fechaEmpaque: r.fecha_empaque,
-      nPlanta: r.n_planta,
-      linea: r.linea ?? "",
-      turno: r.turno,
-      productor: r.productor ?? "",
-      cliente: r.cliente ?? "",
-      destino: r.destino ?? "",
-      formato: r.formato ?? "",
-      calibre: r.calibre ?? "",
-      embalajeCaja: r.embalaje_caja ?? "",
-      embalajeClamshell: r.embalaje_clamshell ?? "",
-      variedad: r.variedad ?? "",
-      intervaloCosecha: r.intervalo_cosecha ?? "",
-      dniInspector: r.dni_inspector ?? "",
-      inspector: r.inspector ?? "",
-      supervisor: r.supervisor ?? "",
-      dniEmpacador: r.dni_empacador ?? "",
-      empacador: r.empacador ?? "",
-      pesoEstablecido: r.peso_establecido,
-      medidaCorrectiva: r.medida_correctiva ?? "",
-      observaciones: r.observaciones ?? "",
-      clamshells: (byMuestra.get(r.id) || [])
-        .map((c: any) => ({
-          id: c.id,
-          muestraId: c.muestra_id,
-          nClamshell: c.n_clamshell,
-          peso: c.peso,
-          nBayasEvaluadas: c.n_bayas_evaluadas,
-          counts: c.counts || {},
-          nota: c.nota,
-          pesoCorrecto: c.peso_correcto,
-          trazabilidadConforme: c.trazabilidad_conforme,
-          calibreCorrecto: c.calibre_correcto,
-          observacion: c.observacion ?? "",
-        }))
-        .sort((a: Clamshell, b: Clamshell) => a.nClamshell - b.nClamshell),
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      createdBy: r.created_by ?? "",
-      sync: "synced",
-    };
-    await db.muestras.put(m);
+    await db.muestras.put(rowToMuestra(r, byMuestra.get(r.id) || []));
     merged++;
   }
   return merged;
 }
 
 /** Sincronización completa (push + pull). */
-export async function fullSync(): Promise<{ pushed: number; pulled: number; failed: number }> {
-  const { ok, fail } = await pushPending();
+export async function fullSync(): Promise<{ pushed: number; pulled: number; failed: number; conflicts: number }> {
+  const { ok, fail, conflict } = await pushPending();
   const pulled = await pullAll();
-  return { pushed: ok, pulled, failed: fail };
+  return { pushed: ok, pulled, failed: fail, conflicts: conflict };
+}
+
+/**
+ * Resuelve un conflicto descartando los cambios locales: trae la versión
+ * actual del servidor y la deja como la copia local (se pierde lo editado
+ * en este dispositivo desde la última sincronización).
+ */
+export async function resolveConflictUseServer(id: string): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  const { data: r, error } = await withRetry(() =>
+    supabase!.from("muestras").select("*").eq("id", id).maybeSingle()
+  );
+  if (error || !r) throw error ?? new Error("La muestra ya no existe en el servidor");
+  const { data: cls } = await withRetry(() =>
+    supabase!.from("clamshells").select("*").eq("muestra_id", id)
+  );
+  await db.muestras.put(rowToMuestra(r, cls || []));
+}
+
+/**
+ * Resuelve un conflicto conservando los cambios locales: re-sube esta
+ * muestra ignorando lo que haya en el servidor (lo sobrescribe a propósito).
+ */
+export async function resolveConflictKeepLocal(id: string): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  const m = await db.muestras.get(id);
+  if (!m) return;
+  await pushOne(m, /* force */ true);
 }
