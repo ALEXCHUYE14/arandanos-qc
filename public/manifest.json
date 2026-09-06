@@ -1,0 +1,15 @@
+{
+  "name": "Control de Calidad — Arándanos",
+  "short_name": "QC Arándanos",
+  "description": "Inspección de calidad de P.T. en clamshell — Línea de empaque (BH-F-CCA-006)",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F8FAFC",
+  "theme_color": "#3B4C7A",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

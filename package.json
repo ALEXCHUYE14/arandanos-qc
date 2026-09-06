@@ -1,0 +1,46 @@
+{
+  "name": "arandanos-qc",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sistema Enterprise de Control de Calidad y Reportabilidad Móvil (Arándanos) — BH-F-CCA-006",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "@tanstack/react-query": "^5.59.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.1.1",
+    "dexie": "^4.0.8",
+    "dexie-react-hooks": "^1.1.7",
+    "framer-motion": "^11.11.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^0.446.0",
+    "next": "15.5.25",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "tailwind-merge": "^2.5.2",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zustand": "^4.5.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.16.10",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "15.5.25",
+    "postcss": "^8.5.28",
+    "tailwindcss": "^3.4.13",
+    "typescript": "^5.6.2"
+  },
+  "overrides": {
+    "postcss": "$postcss"
+  }
+}

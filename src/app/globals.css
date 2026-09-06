@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background-color: #f8fafc;
+  color: #0f172a;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Evita el zoom accidental en inputs numéricos en iOS (fuente >= 16px). */
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+/* Oculta las flechas de los inputs number para el contador de campo. */
+input[type="number"].no-spin::-webkit-outer-spin-button,
+input[type="number"].no-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"].no-spin {
+  -moz-appearance: textfield;
+}
+
+/* Área segura para dispositivos con notch. */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
