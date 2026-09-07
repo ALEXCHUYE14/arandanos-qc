@@ -3,7 +3,7 @@
 import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { LogIn, AlertCircle } from "lucide-react";
+import { LogIn, AlertCircle, ShieldCheck, LifeBuoy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -45,30 +45,39 @@ function LoginForm() {
   }
 
   return (
-    <main className="relative flex min-h-[calc(100vh-1.75rem)] items-center justify-center overflow-hidden px-4 py-8">
-      {/* Fondo: foto de planta de empaque. Overlay oscuro encima para que el
-          texto y la tarjeta de login mantengan buen contraste sin importar
-          qué zona de la foto quede detrás. */}
-      <div className="absolute inset-0" aria-hidden="true">
+    <main className="relative flex min-h-[calc(100vh-1.75rem)] items-center justify-center px-4 py-8">
+      {/* Fondo a todo el ancho de la ventana. `fixed` (en vez de `absolute`)
+          es a propósito: el layout raíz envuelve TODAS las páginas en un
+          contenedor centrado `max-w-6xl` (para que /inspector y /dashboard
+          no queden edge-to-edge en pantallas anchas). `fixed` saca a este
+          fondo de esa caja y lo ancla directo al viewport, sin tocar el
+          layout raíz ni afectar ninguna otra pantalla. Overlay oscuro encima
+          para que el texto y la tarjeta mantengan buen contraste sin
+          importar qué zona de la foto quede detrás. */}
+      <div className="fixed inset-0" aria-hidden="true">
         <Image src="/img/fondo.jpg" alt="" fill priority className="object-cover object-center" />
       </div>
-      <div className="absolute inset-0 bg-ink/65" aria-hidden="true" />
+      <div className="fixed inset-0 bg-ink/65" aria-hidden="true" />
 
-      <div className="relative z-10 w-full max-w-sm">
-        <header className="mb-6 text-center">
+      <div className="relative z-10 w-full max-w-sm animate-fade-in">
+        <header className="mb-5 text-center">
           <Image
             src="/img/logo.jpg"
             alt="Berry Harvest"
             width={1136}
             height={943}
             priority
-            className="mx-auto mb-3 h-24 w-auto rounded-lg bg-white p-1.5 shadow-md"
+            className="mx-auto mb-3 h-24 w-auto rounded-lg bg-white p-1.5 shadow-lg"
           />
           <h1 className="text-xl font-bold text-white drop-shadow-sm">Control de Calidad — Arándanos</h1>
           <p className="mt-1 text-sm text-white/85 drop-shadow-sm">Iniciá sesión para continuar</p>
+          <span className="mt-3 inline-flex items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 py-1 text-xs font-medium text-white/90 backdrop-blur-sm">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Acceso exclusivo del personal autorizado
+          </span>
         </header>
 
-        <Card>
+        <Card className="shadow-xl">
           <CardContent className="p-6">
             {!isSupabaseConfigured ? (
               <p className="text-sm text-muted">
@@ -118,10 +127,16 @@ function LoginForm() {
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-white/85 drop-shadow-sm">
-          ¿No tenés cuenta? Pedile a Jefatura de Calidad que te la cree desde el panel de
-          administración.
-        </p>
+        <div className="mt-6 space-y-2 text-center text-xs text-white/85 drop-shadow-sm">
+          <p>
+            ¿No tenés cuenta? Pedile a Jefatura de Calidad que te la cree desde el panel de
+            administración.
+          </p>
+          <p className="flex items-center justify-center gap-1.5 text-white/70">
+            <LifeBuoy className="h-3.5 w-3.5 shrink-0" />
+            ¿Problemas para acceder? Contactar soporte
+          </p>
+        </div>
       </div>
     </main>
   );
