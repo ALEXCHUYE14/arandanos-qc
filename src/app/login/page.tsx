@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 
+// Soporte por WhatsApp (+51 924 996 961). El +51 va sin "+" ni espacios en
+// el link de wa.me; el mensaje precargado se arma con encodeURIComponent acá
+// mismo en vez de escribirlo ya codificado a mano, para no equivocar ningún
+// carácter (tildes, ¿, etc.) en la URL.
+const WHATSAPP_SOPORTE = `https://wa.me/51924996961?text=${encodeURIComponent(
+  "Hola, necesito ayuda para acceder al sistema de Control de Calidad."
+)}`;
+
 export default function LoginPage() {
   return (
     <Suspense fallback={null}>
@@ -134,7 +142,15 @@ function LoginForm() {
           </p>
           <p className="flex items-center justify-center gap-1.5 text-white/70">
             <LifeBuoy className="h-3.5 w-3.5 shrink-0" />
-            ¿Problemas para acceder? Contactar soporte
+            ¿Problemas para acceder?{" "}
+            <a
+              href={WHATSAPP_SOPORTE}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-white underline underline-offset-2 hover:text-white/90"
+            >
+              Contactar soporte
+            </a>
           </p>
         </div>
       </div>
