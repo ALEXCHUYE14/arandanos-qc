@@ -60,7 +60,10 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
-    // Todo excepto assets estáticos, íconos, manifest y el service worker.
-    "/((?!_next/static|_next/image|favicon.ico|manifest.json|sw.js|icons/).*)",
+    // Todo excepto internos de Next y cualquier archivo estático (por
+    // extensión, no por carpeta — así no se repite el bug de haber excluido
+    // "icons/" a mano y olvidar "img/" cuando se agregó después: cualquier
+    // .jpg/.png/etc en /public, esté donde esté, queda afuera del middleware).
+    "/((?!_next/static|_next/image|manifest.json|sw.js|.*\\.(?:jpg|jpeg|png|gif|webp|svg|ico|css|js|txt|woff2?|webmanifest)$).*)",
   ],
 };
