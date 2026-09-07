@@ -84,6 +84,23 @@ create index if not exists idx_muestras_empacador  on public.muestras(empacador)
 create index if not exists idx_muestras_empaque    on public.muestras(fecha_empaque);
 create index if not exists idx_muestras_codigo     on public.muestras(codigo);
 
+-- Secuencia atómica para el correlativo real (ID / código ME-XXXXX). Antes
+-- cada dispositivo generaba su propio correlativo local empezando en 10001
+-- (IndexedDB), así que dos celulares sin conexión entre sí podían terminar
+-- con el mismo "ME-10001" al sincronizar los dos — pasó de verdad en
+-- producción. upsert_muestra_full() asigna el número real recién en el
+-- primer sync exitoso (ver más abajo), usando esta secuencia — nunca se
+-- repite entre dispositivos. El valor inicial evita chocar con los
+-- correlativos que ya existen en la tabla (incluidos los duplicados viejos).
+create sequence if not exists public.muestras_id_maestro_seq;
+select setval(
+  'public.muestras_id_maestro_seq',
+  greatest(coalesce((select max(id_maestro) from public.muestras), 10000), 10000)
+);
+-- upsert_muestra_full() no es security definer: corre con los permisos de
+-- quien la llama, así que necesita este grant explícito para poder nextval().
+grant usage on sequence public.muestras_id_maestro_seq to authenticated;
+
 -- =====================================================================
 --  CLAMSHELLS — una fila del Excel maestro por clamshell
 -- =====================================================================
@@ -190,26 +207,40 @@ create trigger trg_muestras_touch
 --  is_conflict = true en vez de pisar silenciosamente el cambio ajeno.
 --  Pasar p_expected_updated_at = null fuerza la escritura sin chequear
 --  (se usa para "conservar mi versión" al resolver un conflicto a mano).
+--
+--  El ID/código (ME-XXXXX) lo asigna ESTA función la primera vez que la
+--  muestra sincroniza con éxito, con `muestras_id_maestro_seq` — nunca lo
+--  que mandó el cliente (que es solo un correlativo local provisorio; dos
+--  dispositivos sin conexión entre sí pueden generar el mismo). Una vez
+--  asignado, queda fijo para siempre: ediciones posteriores no lo tocan.
 -- =====================================================================
 create or replace function public.upsert_muestra_full(
   p_muestra jsonb,
   p_clamshells jsonb,
   p_expected_updated_at timestamptz default null
 )
-returns table (updated_at timestamptz, is_conflict boolean)
+returns table (updated_at timestamptz, is_conflict boolean, id_maestro integer, codigo text)
 language plpgsql as $$
 declare
   v_id uuid := (p_muestra->>'id')::uuid;
   v_current_updated_at timestamptz;
+  v_id_maestro integer;
+  v_codigo text;
 begin
-  select m.updated_at into v_current_updated_at
+  select m.updated_at, m.id_maestro, m.codigo
+    into v_current_updated_at, v_id_maestro, v_codigo
   from public.muestras m where m.id = v_id;
 
   if v_current_updated_at is not null
      and p_expected_updated_at is not null
      and v_current_updated_at <> p_expected_updated_at then
-    return query select v_current_updated_at, true;
+    return query select v_current_updated_at, true, v_id_maestro, v_codigo;
     return;
+  end if;
+
+  if v_id_maestro is null then
+    v_id_maestro := nextval('public.muestras_id_maestro_seq');
+    v_codigo := 'ME-' || lpad(v_id_maestro::text, 5, '0');
   end if;
 
   insert into public.muestras (
@@ -220,7 +251,7 @@ begin
   )
   values (
     v_id,
-    p_muestra->>'codigo', (p_muestra->>'id_maestro')::int, (p_muestra->>'semana')::int,
+    v_codigo, v_id_maestro, (p_muestra->>'semana')::int,
     p_muestra->>'hora_evaluacion',
     (p_muestra->>'fecha_cosecha')::date, (p_muestra->>'fecha_empaque')::date,
     (p_muestra->>'n_planta')::int, p_muestra->>'linea', p_muestra->>'turno',
@@ -235,7 +266,9 @@ begin
     p_muestra->>'created_by'
   )
   on conflict (id) do update set
-    codigo = excluded.codigo, id_maestro = excluded.id_maestro, semana = excluded.semana,
+    -- codigo / id_maestro NO se tocan acá a propósito: una vez asignados
+    -- por el servidor, quedan fijos (no se renombran en cada edición).
+    semana = excluded.semana,
     hora_evaluacion = excluded.hora_evaluacion,
     fecha_cosecha = excluded.fecha_cosecha, fecha_empaque = excluded.fecha_empaque,
     n_planta = excluded.n_planta, linea = excluded.linea, turno = excluded.turno,
@@ -269,7 +302,7 @@ begin
     nota = excluded.nota, observacion = excluded.observacion;
 
   select m.updated_at into v_current_updated_at from public.muestras m where m.id = v_id;
-  return query select v_current_updated_at, false;
+  return query select v_current_updated_at, false, v_id_maestro, v_codigo;
 end;
 $$;
 

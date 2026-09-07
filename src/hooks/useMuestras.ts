@@ -48,6 +48,11 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
 
   const m: Muestra = {
     id,
+    // Provisorio: es un correlativo LOCAL (por dispositivo), solo para tener
+    // algo que mostrar mientras no hay señal. Si hay backend configurado, el
+    // servidor asigna el ID/código real (nunca repetido entre dispositivos)
+    // en el primer sync exitoso y reemplaza esto — ver upsert_muestra_full
+    // en supabase/schema.sql y pushOne en lib/sync.ts.
     codigo: makeCodigo(seq),
     idMaestro: seq,
     semana: isoWeek(),

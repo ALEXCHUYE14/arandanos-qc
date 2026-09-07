@@ -12,6 +12,12 @@ import { ClamshellEditor } from "@/components/inspector/ClamshellEditor";
 import { useMuestra, updateMuestra, removeMuestra } from "@/hooks/useMuestras";
 import { computeMuestra, emptyClamshell } from "@/lib/calc";
 import { copyMuestraToClipboard } from "@/lib/excel";
+
+// Chequeo liviano (sin importar lib/supabase, que arrastra todo el SDK de
+// Supabase al bundle de esta página solo para leer un booleano).
+const isSupabaseConfigured = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
 import { cn } from "@/lib/utils";
 import type { Clamshell, Muestra } from "@/lib/types";
 
@@ -84,7 +90,19 @@ export default function CapturaPage() {
           <ArrowLeft className="h-4 w-4" /> Muestras
         </Link>
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-ink">{draft.codigo}</span>
+          <span
+            className="font-mono text-sm font-semibold text-ink"
+            title={
+              isSupabaseConfigured && draft.sync === "pending"
+                ? "Provisorio: el código definitivo se asigna al sincronizar, para que nunca se repita entre dispositivos."
+                : undefined
+            }
+          >
+            {draft.codigo}
+            {isSupabaseConfigured && draft.sync === "pending" && (
+              <span className="ml-1 align-middle text-[10px] font-normal text-muted">(provisorio)</span>
+            )}
+          </span>
           <Badge variant={res.cumple ? "success" : "danger"}>
             {res.cumple ? "CUMPLE" : "NO CUMPLE"}
           </Badge>

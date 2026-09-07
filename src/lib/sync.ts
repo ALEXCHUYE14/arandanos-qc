@@ -150,6 +150,14 @@ async function pushOne(m: Muestra, force = false): Promise<"ok" | "conflict"> {
   }
   m.sync = "synced";
   m.baseUpdatedAt = row?.updated_at ?? m.baseUpdatedAt;
+  // El servidor asigna el ID/código real recién en el primer sync exitoso
+  // (ver upsert_muestra_full en supabase/schema.sql) — el que se generó
+  // localmente al crear la muestra es solo un correlativo provisorio, y dos
+  // dispositivos sin conexión entre sí pueden haber generado el mismo. Acá
+  // se reemplaza por el definitivo; en syncs siguientes esto es un no-op
+  // porque el servidor ya no lo vuelve a cambiar.
+  if (row?.id_maestro != null) m.idMaestro = row.id_maestro;
+  if (row?.codigo) m.codigo = row.codigo;
   await db.muestras.put(m);
   return "ok";
 }
