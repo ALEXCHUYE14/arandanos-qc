@@ -2,7 +2,8 @@
 
 import { Suspense, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Leaf, LogIn, AlertCircle } from "lucide-react";
+import Image from "next/image";
+import { LogIn, AlertCircle } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -44,14 +45,27 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-1.75rem)] items-center justify-center px-4 py-8">
-      <div className="w-full max-w-sm">
+    <main className="relative flex min-h-[calc(100vh-1.75rem)] items-center justify-center overflow-hidden px-4 py-8">
+      {/* Fondo: foto de planta de empaque. Overlay oscuro encima para que el
+          texto y la tarjeta de login mantengan buen contraste sin importar
+          qué zona de la foto quede detrás. */}
+      <div className="absolute inset-0" aria-hidden="true">
+        <Image src="/img/fondo.jpg" alt="" fill priority className="object-cover object-center" />
+      </div>
+      <div className="absolute inset-0 bg-ink/65" aria-hidden="true" />
+
+      <div className="relative z-10 w-full max-w-sm">
         <header className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-lg bg-brand text-white">
-            <Leaf className="h-7 w-7" />
-          </div>
-          <h1 className="text-xl font-bold text-ink">Control de Calidad — Arándanos</h1>
-          <p className="mt-1 text-sm text-muted">Iniciá sesión para continuar</p>
+          <Image
+            src="/img/logo.jpg"
+            alt="Berry Harvest"
+            width={1136}
+            height={943}
+            priority
+            className="mx-auto mb-3 h-24 w-auto rounded-lg bg-white p-1.5 shadow-md"
+          />
+          <h1 className="text-xl font-bold text-white drop-shadow-sm">Control de Calidad — Arándanos</h1>
+          <p className="mt-1 text-sm text-white/85 drop-shadow-sm">Iniciá sesión para continuar</p>
         </header>
 
         <Card>
@@ -104,7 +118,7 @@ function LoginForm() {
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-muted">
+        <p className="mt-6 text-center text-xs text-white/85 drop-shadow-sm">
           ¿No tenés cuenta? Pedile a Jefatura de Calidad que te la cree desde el panel de
           administración.
         </p>
