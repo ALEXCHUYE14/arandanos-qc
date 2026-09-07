@@ -43,7 +43,7 @@ Comandos útiles: `npm run build`, `npm start`, `npm run typecheck`, `npm run li
    Jefatura de Calidad:
    ```sql
    update public.profiles set rol = 'jefatura'
-   where id = (select id from auth.users where email = 'betzy@empresa.com');
+   where id = (select id from auth.users where email = 'betsy@empresa.com');
    ```
 5. Con `NEXT_PUBLIC_SUPABASE_URL`/`ANON_KEY` configurados, `/login` pasa a ser
    obligatorio para entrar (lo aplica `src/middleware.ts`) y `/dashboard` queda

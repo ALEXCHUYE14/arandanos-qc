@@ -72,7 +72,7 @@ export function downloadXlsx(muestras: Muestra[], filename = "Base_de_Datos_Insp
     ["Control de Cambios"],
     [],
     ["Versión", "Fecha", "Descripción del Cambio", "Responsable"],
-    ["01", "31/07/2026", "Primera emisión del documento", "Coordinador de Calidad — Betzy Crisanto Valdiviezo"],
+    ["01", "31/07/2026", "Primera emisión del documento", "Coordinador de Calidad — Betsy Crisanto Valdiviezo"],
   ];
   const wsCC = XLSX.utils.aoa_to_sheet(ccAoa);
   XLSX.utils.book_append_sheet(wb, wsCC, "Control de Cambios");
