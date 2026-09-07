@@ -50,6 +50,7 @@ create table if not exists public.muestras (
   codigo             text not null,
   id_maestro         integer,
   semana             integer,
+  hora_evaluacion    text default '',
   fecha_cosecha      date,
   fecha_empaque      date,
   n_planta           integer,
@@ -57,12 +58,13 @@ create table if not exists public.muestras (
   turno              text default 'DÍA',
   productor          text default '',
   cliente            text default '',
-  destino            text default '',
-  formato            text default '',
-  calibre            text default '',
-  embalaje_caja      text default '',
-  embalaje_clamshell text default '',
+  destino            text default '', -- determina la columna de tolerancia (ver defect_catalog / app)
   variedad           text default '',
+  formato            text default '',
+  tipo_empaque       text default '',
+  calibre            text default '',
+  embalaje_caja      text default '', -- si contiene "SWEETEST BATCH" + destino USA, tolerancia más estricta
+  embalaje_clamshell text default '',
   intervalo_cosecha  text default '',
   dni_inspector      text default '',
   inspector          text default '',
@@ -89,13 +91,9 @@ create table if not exists public.clamshells (
   id                    uuid primary key default gen_random_uuid(),
   muestra_id            uuid not null references public.muestras(id) on delete cascade,
   n_clamshell           integer not null,
-  peso                  numeric,
   n_bayas_evaluadas     integer not null default 99,
   counts                jsonb   not null default '{}'::jsonb, -- { defect_key: cantidad }
   nota                  integer,
-  peso_correcto         boolean default true,
-  trazabilidad_conforme boolean default true,
-  calibre_correcto      boolean default true,
   observacion           text default '',
   unique (muestra_id, n_clamshell)
 );
@@ -111,12 +109,19 @@ create table if not exists public.defect_catalog (
   category text not null check (category in ('aprovechable','descarte'))
 );
 
+-- Catálogo actualizado según la planilla del cliente ("BH-F-CCA-006. Base de
+-- Datos ... (1).xlsx", hoja "Defectos"): 44 defectos (antes 45). Cambios:
+-- SIN BLOOM pasó de descarte a aprovechable; se agregan MANCHAS EXTRAÑAS
+-- (reemplaza a MANCHA DE APLICACIÓN) y se elimina CERA DE ABEJA EXTREMO.
+delete from public.defect_catalog where key in ('mancha_aplicacion', 'cera_abeja_extremo');
+
 insert into public.defect_catalog (key, label, category) values
   ('desgarro_leve_seco','DESGARRO LEVE SECO','aprovechable'),
   ('corola','PRESENCIA DE COROLA','aprovechable'),
   ('resto_floral_verde','PRESENCIA DE RESTO FLORAL VERDE','aprovechable'),
   ('pedunculo','PRESENCIA DE PEDÚNCULO','aprovechable'),
   ('poca_bloom','POCA PRESENCIA DE BLOOM','aprovechable'),
+  ('sin_bloom','SIN BLOOM','aprovechable'),
   ('rojo_grado_1','ROJO GRADO 1','aprovechable'),
   ('aro_pedicelar_verde_leve','ARO PEDICELAR VERDE LEVE','aprovechable'),
   ('trips_leve','DAÑO DE TRIPS LEVE','aprovechable'),
@@ -153,10 +158,8 @@ insert into public.defect_catalog (key, label, category) values
   ('aro_pedicelar_verde_extremo','ARO PEDICELAR VERDE EXTREMO','descarte'),
   ('trips_extremo','DAÑO DE TRIPS EXTREMO','descarte'),
   ('dano_mecanico','DAÑO MECÁNICO','descarte'),
-  ('mancha_aplicacion','MANCHA DE APLICACIÓN','descarte'),
-  ('cera_abeja_extremo','CERA DE ABEJA EXTREMO','descarte'),
-  ('sin_bloom','SIN BLOOM','descarte'),
-  ('bajo_calibre','BAJO CALIBRE <10 mm','descarte')
+  ('manchas_extranas','MANCHAS EXTRAÑAS','descarte'),
+  ('bajo_calibre','BAJO CALIBRE','descarte')
 on conflict (key) do update set label = excluded.label, category = excluded.category;
 
 -- =====================================================================
@@ -210,19 +213,21 @@ begin
   end if;
 
   insert into public.muestras (
-    id, codigo, id_maestro, semana, fecha_cosecha, fecha_empaque, n_planta, linea, turno,
-    productor, cliente, destino, formato, calibre, embalaje_caja, embalaje_clamshell,
-    variedad, intervalo_cosecha, dni_inspector, inspector, supervisor, dni_empacador,
+    id, codigo, id_maestro, semana, hora_evaluacion, fecha_cosecha, fecha_empaque, n_planta, linea, turno,
+    productor, cliente, destino, variedad, formato, tipo_empaque, calibre, embalaje_caja, embalaje_clamshell,
+    intervalo_cosecha, dni_inspector, inspector, supervisor, dni_empacador,
     empacador, peso_establecido, medida_correctiva, observaciones, created_at, created_by
   )
   values (
     v_id,
     p_muestra->>'codigo', (p_muestra->>'id_maestro')::int, (p_muestra->>'semana')::int,
+    p_muestra->>'hora_evaluacion',
     (p_muestra->>'fecha_cosecha')::date, (p_muestra->>'fecha_empaque')::date,
     (p_muestra->>'n_planta')::int, p_muestra->>'linea', p_muestra->>'turno',
     p_muestra->>'productor', p_muestra->>'cliente', p_muestra->>'destino',
-    p_muestra->>'formato', p_muestra->>'calibre', p_muestra->>'embalaje_caja',
-    p_muestra->>'embalaje_clamshell', p_muestra->>'variedad', p_muestra->>'intervalo_cosecha',
+    p_muestra->>'variedad', p_muestra->>'formato', p_muestra->>'tipo_empaque',
+    p_muestra->>'calibre', p_muestra->>'embalaje_caja',
+    p_muestra->>'embalaje_clamshell', p_muestra->>'intervalo_cosecha',
     p_muestra->>'dni_inspector', p_muestra->>'inspector', p_muestra->>'supervisor',
     p_muestra->>'dni_empacador', p_muestra->>'empacador',
     (p_muestra->>'peso_establecido')::numeric, p_muestra->>'medida_correctiva',
@@ -231,11 +236,13 @@ begin
   )
   on conflict (id) do update set
     codigo = excluded.codigo, id_maestro = excluded.id_maestro, semana = excluded.semana,
+    hora_evaluacion = excluded.hora_evaluacion,
     fecha_cosecha = excluded.fecha_cosecha, fecha_empaque = excluded.fecha_empaque,
     n_planta = excluded.n_planta, linea = excluded.linea, turno = excluded.turno,
     productor = excluded.productor, cliente = excluded.cliente, destino = excluded.destino,
-    formato = excluded.formato, calibre = excluded.calibre, embalaje_caja = excluded.embalaje_caja,
-    embalaje_clamshell = excluded.embalaje_clamshell, variedad = excluded.variedad,
+    variedad = excluded.variedad, formato = excluded.formato, tipo_empaque = excluded.tipo_empaque,
+    calibre = excluded.calibre, embalaje_caja = excluded.embalaje_caja,
+    embalaje_clamshell = excluded.embalaje_clamshell,
     intervalo_cosecha = excluded.intervalo_cosecha, dni_inspector = excluded.dni_inspector,
     inspector = excluded.inspector, supervisor = excluded.supervisor,
     dni_empacador = excluded.dni_empacador, empacador = excluded.empacador,
@@ -249,22 +256,17 @@ begin
     );
 
   insert into public.clamshells (
-    id, muestra_id, n_clamshell, peso, n_bayas_evaluadas, counts, nota,
-    peso_correcto, trazabilidad_conforme, calibre_correcto, observacion
+    id, muestra_id, n_clamshell, n_bayas_evaluadas, counts, nota, observacion
   )
   select
-    (elem->>'id')::uuid, v_id, (elem->>'n_clamshell')::int, (elem->>'peso')::numeric,
+    (elem->>'id')::uuid, v_id, (elem->>'n_clamshell')::int,
     coalesce((elem->>'n_bayas_evaluadas')::int, 99), coalesce(elem->'counts', '{}'::jsonb),
-    (elem->>'nota')::int, coalesce((elem->>'peso_correcto')::boolean, true),
-    coalesce((elem->>'trazabilidad_conforme')::boolean, true),
-    coalesce((elem->>'calibre_correcto')::boolean, true), elem->>'observacion'
+    (elem->>'nota')::int, elem->>'observacion'
   from jsonb_array_elements(p_clamshells) elem
   on conflict (id) do update set
-    n_clamshell = excluded.n_clamshell, peso = excluded.peso,
+    n_clamshell = excluded.n_clamshell,
     n_bayas_evaluadas = excluded.n_bayas_evaluadas, counts = excluded.counts,
-    nota = excluded.nota, peso_correcto = excluded.peso_correcto,
-    trazabilidad_conforme = excluded.trazabilidad_conforme,
-    calibre_correcto = excluded.calibre_correcto, observacion = excluded.observacion;
+    nota = excluded.nota, observacion = excluded.observacion;
 
   select m.updated_at into v_current_updated_at from public.muestras m where m.id = v_id;
   return query select v_current_updated_at, false;

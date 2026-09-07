@@ -19,13 +19,9 @@ export interface Clamshell {
   id: string; // uuid local
   muestraId: string;
   nClamshell: number; // 1, 2, 3, ...
-  peso: number | null; // gramos medidos
   nBayasEvaluadas: number; // denominador de los %
   counts: DefectCounts;
   nota: number | null; // 15 = conforme; ver ESTÁNDAR /CLAMSHELL
-  pesoCorrecto: boolean;
-  trazabilidadConforme: boolean;
-  calibreCorrecto: boolean;
   observacion: string;
 }
 
@@ -36,19 +32,21 @@ export interface Muestra {
 
   // Cabecera / lote
   semana: number | null;
+  horaEvaluacion: string; // "HH:MM", opcional
   fechaCosecha: string | null; // ISO yyyy-mm-dd
   fechaEmpaque: string | null;
   nPlanta: number | null;
-  linea: string; // línea de empaque (metadato del reporte; no forma parte de las 124 columnas)
+  linea: string; // línea de empaque (metadato del reporte; no forma parte de las columnas del maestro)
   turno: Turno;
   productor: string;
   cliente: string;
-  destino: string;
-  formato: string;
-  calibre: string;
-  embalajeCaja: string;
-  embalajeClamshell: string;
+  destino: string; // determina qué columna de tolerancia aplica (ver lib/defects.ts)
   variedad: string;
+  formato: string;
+  tipoEmpaque: string; // "CONVENCIONAL" | "JUMBO" | ...
+  calibre: string;
+  embalajeCaja: string; // si contiene "SWEETEST BATCH" + destino USA, aplica la tolerancia más estricta
+  embalajeClamshell: string; // "ETIQUETA CLAMSHELL" en el maestro
   intervaloCosecha: string;
 
   // Personal

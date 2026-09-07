@@ -6,19 +6,22 @@ import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DefectCounter } from "./DefectCounter";
 import { APROVECHABLES, DESCARTES, type DefectDef } from "@/lib/defects";
-import { computeClamshell } from "@/lib/calc";
+import { computeClamshell, resolveDestinoTier } from "@/lib/calc";
 import { cn } from "@/lib/utils";
-import type { Clamshell } from "@/lib/types";
+import type { Clamshell, Muestra } from "@/lib/types";
 
 export function ClamshellEditor({
   clamshell,
+  muestra,
   onChange,
 }: {
   clamshell: Clamshell;
+  muestra: Pick<Muestra, "destino" | "embalajeCaja">;
   onChange: (cs: Clamshell) => void;
 }) {
   const [q, setQ] = useState("");
-  const res = computeClamshell(clamshell);
+  const tier = resolveDestinoTier(muestra.destino, muestra.embalajeCaja);
+  const res = computeClamshell(clamshell, tier);
 
   const setCount = (key: string, v: number) =>
     onChange({ ...clamshell, counts: { ...clamshell.counts, [key]: v } });
@@ -44,18 +47,6 @@ export function ClamshellEditor({
             value={clamshell.nBayasEvaluadas || ""}
             onChange={(e) =>
               onChange({ ...clamshell, nBayasEvaluadas: parseInt(e.target.value, 10) || 0 })
-            }
-          />
-        </div>
-        <div>
-          <Label>Peso medido (g)</Label>
-          <Input
-            type="number"
-            inputMode="decimal"
-            className="no-spin"
-            value={clamshell.peso ?? ""}
-            onChange={(e) =>
-              onChange({ ...clamshell, peso: e.target.value === "" ? null : parseFloat(e.target.value) })
             }
           />
         </div>
@@ -88,25 +79,6 @@ export function ClamshellEditor({
             {res.estandar}
           </div>
         </div>
-      </div>
-
-      {/* Verificaciones */}
-      <div className="flex flex-wrap gap-2">
-        <Toggle
-          label="Peso correcto"
-          checked={clamshell.pesoCorrecto}
-          onChange={(v) => onChange({ ...clamshell, pesoCorrecto: v })}
-        />
-        <Toggle
-          label="Trazabilidad conforme"
-          checked={clamshell.trazabilidadConforme}
-          onChange={(v) => onChange({ ...clamshell, trazabilidadConforme: v })}
-        />
-        <Toggle
-          label="Calibre correcto"
-          checked={clamshell.calibreCorrecto}
-          onChange={(v) => onChange({ ...clamshell, calibreCorrecto: v })}
-        />
       </div>
 
       {/* KPIs rápidos del clamshell */}
@@ -175,30 +147,6 @@ export function ClamshellEditor({
         />
       </div>
     </div>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={cn(
-        "flex items-center gap-1.5 rounded-md border px-3 py-2 text-xs font-medium transition-colors",
-        checked ? "border-success/30 bg-success/10 text-success" : "border-line bg-surface text-muted"
-      )}
-    >
-      {checked ? <CheckCircle2 className="h-4 w-4" /> : <XCircle className="h-4 w-4" />}
-      {label}
-    </button>
   );
 }
 

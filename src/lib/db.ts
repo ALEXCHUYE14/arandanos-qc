@@ -86,6 +86,7 @@ async function cacheCatalogosFromMuestra(m: Muestra) {
   add("calibre", m.calibre);
   add("embalaje_caja", m.embalajeCaja);
   add("embalaje_clamshell", m.embalajeClamshell);
+  add("tipo_empaque", m.tipoEmpaque);
   if (entries.length) await db.catalogos.bulkPut(entries);
 }
 

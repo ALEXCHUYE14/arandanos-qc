@@ -24,6 +24,10 @@ export function MuestraHeaderForm({
             <Input type="number" className="no-spin" value={m.semana ?? ""} onChange={(e) => set("semana", e.target.value === "" ? null : parseInt(e.target.value, 10))} />
           </div>
           <div>
+            <Label>Hora de evaluación</Label>
+            <Input type="time" value={m.horaEvaluacion ?? ""} onChange={(e) => set("horaEvaluacion", e.target.value)} />
+          </div>
+          <div>
             <Label>N° planta empaque</Label>
             <Input type="number" className="no-spin" value={m.nPlanta ?? ""} onChange={(e) => set("nPlanta", e.target.value === "" ? null : parseInt(e.target.value, 10))} />
           </div>
@@ -57,13 +61,14 @@ export function MuestraHeaderForm({
           <Autocomplete label="Destino" tipo="destino" value={m.destino} onChange={(v) => set("destino", v)} />
           <Autocomplete label="Variedad" tipo="variedad" value={m.variedad} onChange={(v) => set("variedad", v)} />
           <Autocomplete label="Formato" tipo="formato" value={m.formato} onChange={(v) => set("formato", v)} />
+          <Autocomplete label="Tipo de empaque" tipo="tipo_empaque" value={m.tipoEmpaque ?? ""} onChange={(v) => set("tipoEmpaque", v)} />
           <Autocomplete label="Calibre" tipo="calibre" value={m.calibre} onChange={(v) => set("calibre", v)} />
           <div>
-            <Label>Peso establecido (g)</Label>
+            <Label>Peso bruto establecido (g)</Label>
             <Input type="number" className="no-spin" value={m.pesoEstablecido ?? ""} onChange={(e) => set("pesoEstablecido", e.target.value === "" ? null : parseFloat(e.target.value))} />
           </div>
           <Autocomplete label="Embalaje caja" tipo="embalaje_caja" value={m.embalajeCaja} onChange={(v) => set("embalajeCaja", v)} />
-          <Autocomplete label="Embalaje clamshell" tipo="embalaje_clamshell" value={m.embalajeClamshell} onChange={(v) => set("embalajeClamshell", v)} />
+          <Autocomplete label="Etiqueta clamshell" tipo="embalaje_clamshell" value={m.embalajeClamshell} onChange={(v) => set("embalajeClamshell", v)} />
         </div>
       </section>
 

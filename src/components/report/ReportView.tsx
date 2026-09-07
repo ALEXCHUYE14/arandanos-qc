@@ -1,7 +1,6 @@
 "use client";
 
 import { forwardRef } from "react";
-import { Check } from "lucide-react";
 import { computeMuestra } from "@/lib/calc";
 import { DEFECTS } from "@/lib/defects";
 import { fmtDateUI } from "@/lib/utils";
@@ -50,6 +49,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
             <Field label="Planta de Empaque" value={m.nPlanta ?? "—"} />
             <Field label="Turno de empaque" value={m.turno} />
             <Field label="N° Semana" value={m.semana ?? "—"} />
+            <Field label="Hora de evaluación" value={m.horaEvaluacion || "—"} />
           </div>
         </div>
 
@@ -73,6 +73,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
               <Field label="Destino" value={m.destino || "—"} />
               <Field label="Variedad" value={m.variedad || "—"} />
               <Field label="Formato" value={m.formato || "—"} />
+              <Field label="Tipo de empaque" value={m.tipoEmpaque || "—"} />
               <Field label="Calibre" value={m.calibre || "—"} />
               <Field label="Peso establecido" value={m.pesoEstablecido ? `${m.pesoEstablecido}g` : "—"} />
             </div>
@@ -127,16 +128,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
                   )}
                 </div>
                 <div>
-                  <p className="mb-2 text-[13px]">
-                    <span className="text-[#64748B]">Peso: </span>
-                    <span className="font-bold">{cs.peso != null ? `${cs.peso}g` : "—"}</span>
-                  </p>
-                  <div className="space-y-1.5 text-[13px]">
-                    <VerifyRow ok={cs.pesoCorrecto} label="Peso correcto" />
-                    <VerifyRow ok={cs.trazabilidadConforme} label="Trazabilidad Conforme" />
-                    <VerifyRow ok={cs.calibreCorrecto} label="Calibre Correcto" />
-                  </div>
-                  <p className="mt-2 text-[12px] text-[#64748B]">
+                  <p className="text-[13px]">
                     {cr.nBayasEvaluadas} bayas · Nota {cr.nota} ·{" "}
                     <span className={cr.cumple ? "text-[#16A34A]" : "text-[#DC2626]"}>{cr.estandar}</span>
                   </p>
@@ -189,11 +181,3 @@ function Kpi({ label, value, color }: { label: string; value: string; color: str
   );
 }
 
-function VerifyRow({ ok, label }: { ok: boolean; label: string }) {
-  return (
-    <div className={`flex items-center gap-1.5 ${ok ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
-      {ok ? <Check className="h-4 w-4" /> : <span className="text-[14px] font-bold">✗</span>}
-      <span className="font-medium">{label}</span>
-    </div>
-  );
-}

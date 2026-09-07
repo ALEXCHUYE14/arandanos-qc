@@ -1,14 +1,16 @@
 /**
  * MOTOR DE CÁLCULO — replica exacta de las fórmulas del Excel maestro BH-F-CCA-006.
  *
- * Reglas (verificadas contra la hoja "Base de Datos"):
+ * Reglas (verificadas contra las hojas "Base de Datos" y "Defectos"):
  *   • % de defecto            = conteo / N° bayas evaluadas.
- *   • % rollup (cat. 116-124) = suma de conteos de la categoría / N° bayas evaluadas.
- *   • Aprovechable (cols 27-38) y Descarte (cols 39-71) determinan los KPIs.
+ *   • % rollup (CLASIFICACIÓN) = suma de conteos de la categoría / N° bayas evaluadas.
+ *   • Aprovechable y Descarte determinan los KPIs Cat 1 / Aprovechable / Descarte.
  *   • Cat 1 %  = 1 − %Aprovechable − %Descarte.
  *   • ESTÁNDAR /CLAMSHELL = IF(NOTA=15,"CUMPLE","NO CUMPLE").
  *   • ESTÁNDAR /EMPACADOR = "NO CUMPLE" si algún clamshell de la muestra NO CUMPLE.
- *   • Veredicto por tolerancias: cada rollup <= su umbral y la SUMA <= 10%.
+ *   • Veredicto por tolerancias: cada rollup <= su umbral — el umbral depende
+ *     del DESTINO de la muestra (ver resolveDestinoTier en lib/defects.ts).
+ *     No hay tope de "suma total": lo sacó el cliente de su planilla.
  */
 
 import {
@@ -16,9 +18,11 @@ import {
   DEFECT_BY_KEY,
   ROLLUP_ORDER,
   TOLERANCE_BY_KEY,
-  TOLERANCE_SUMA,
+  toleranceMax,
+  resolveDestinoTier,
   NOTA_CUMPLE,
   type RollupKey,
+  type DestinoTier,
 } from "./defects";
 import type {
   Clamshell,
@@ -58,8 +62,13 @@ function rollupCount(counts: Record<string, number>, rollup: RollupKey): number 
   return t;
 }
 
-/** Cálculo completo de un clamshell. */
-export function computeClamshell(cs: Clamshell): ClamshellResult {
+/**
+ * Cálculo completo de un clamshell. `tier` decide qué columna de tolerancia
+ * (China / Europa-USA / USA Sweetest Batch) aplica — se resuelve una vez por
+ * muestra en `computeMuestra` y se pasa acá para no repetir el cálculo por
+ * cada clamshell.
+ */
+export function computeClamshell(cs: Clamshell, tier: DestinoTier = "europa_usa"): ClamshellResult {
   const bayas = cs.nBayasEvaluadas || 0;
   const counts = cs.counts || {};
 
@@ -71,25 +80,25 @@ export function computeClamshell(cs: Clamshell): ClamshellResult {
   const defectPct: Record<string, number> = {};
   for (const d of DEFECTS) defectPct[d.key] = div(counts[d.key] || 0, bayas);
 
-  // % por rollup + veredicto por tolerancia
+  // % por rollup + veredicto por tolerancia (según destino)
   const rollupPct: Record<string, number> = {};
   const rollupCumple: Record<string, boolean> = {};
   for (const r of ROLLUP_ORDER) {
     const pct = div(rollupCount(counts, r), bayas);
     rollupPct[r] = pct;
     const tol = TOLERANCE_BY_KEY[r];
-    rollupCumple[r] = tol ? pct <= tol.max + 1e-9 : true;
+    rollupCumple[r] = tol ? pct <= toleranceMax(tol, tier) + 1e-9 : true;
   }
 
   const sumaPct = div(totalDefectos, bayas);
 
-  // Veredicto por tolerancias: todos los rollups OK y suma total OK
-  const toleranciasOk =
-    ROLLUP_ORDER.every((r) => rollupCumple[r]) &&
-    sumaPct <= TOLERANCE_SUMA.max + 1e-9;
+  // Veredicto por tolerancias: todos los rollups dentro de su tope para este destino.
+  const toleranciasOk = ROLLUP_ORDER.every((r) => rollupCumple[r]);
 
   // NOTA: si el inspector la fijó se respeta; si no, se deriva del veredicto.
-  const nota = cs.nota != null ? cs.nota : toleranciasOk ? NOTA_CUMPLE : 0;
+  // La planilla del cliente solo usa 5 (no cumple) y 15 (cumple) como notas
+  // válidas (hoja "Lista Maestra"), así que el fallback derivado usa 5, no 0.
+  const nota = cs.nota != null ? cs.nota : toleranciasOk ? NOTA_CUMPLE : 5;
   const estandar: Estandar = nota === NOTA_CUMPLE ? "CUMPLE" : "NO CUMPLE";
   const cumple = estandar === "CUMPLE";
 
@@ -118,7 +127,8 @@ export function computeClamshell(cs: Clamshell): ClamshellResult {
 
 /** Cálculo agregado de una muestra (todos sus clamshells). */
 export function computeMuestra(m: Muestra): MuestraResult {
-  const clamshells = (m.clamshells || []).map(computeClamshell);
+  const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+  const clamshells = (m.clamshells || []).map((cs) => computeClamshell(cs, tier));
 
   const totalBayas = clamshells.reduce((s, c) => s + c.nBayasEvaluadas, 0);
   const totalDefectos = clamshells.reduce((s, c) => s + c.totalDefectos, 0);
@@ -155,24 +165,25 @@ export function computeMuestra(m: Muestra): MuestraResult {
 const RISK_THRESHOLD = 0.8;
 
 /**
- * true si la muestra CUMPLE pero al menos un rollup (o la suma total) de
- * alguno de sus clamshells ya está a partir de RISK_THRESHOLD de su tolerancia
- * máxima — alerta temprana antes de que la próxima muestra del mismo lote
- * pase a NO CUMPLE. Una muestra que ya es NO CUMPLE no se marca "en riesgo":
- * ese caso ya se ve con el badge de NO CUMPLE.
+ * true si la muestra CUMPLE pero al menos un rollup de alguno de sus
+ * clamshells ya está a partir de RISK_THRESHOLD de su tolerancia máxima (para
+ * el destino de esta muestra) — alerta temprana antes de que la próxima
+ * muestra del mismo lote pase a NO CUMPLE. Una muestra que ya es NO CUMPLE
+ * no se marca "en riesgo": ese caso ya se ve con el badge de NO CUMPLE.
  */
 export function computeRiesgo(m: Muestra): boolean {
   const r = computeMuestra(m);
   if (!r.cumple) return false;
-  return r.clamshells.some((cs) => {
-    if (cs.sumaPct >= TOLERANCE_SUMA.max * RISK_THRESHOLD) return true;
-    return ROLLUP_ORDER.some((k) => {
+  const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+  return r.clamshells.some((cs) =>
+    ROLLUP_ORDER.some((k) => {
       const tol = TOLERANCE_BY_KEY[k];
-      // Tolerancia 0 (ej. PUDRICIÓN/HONGO): cualquier ocurrencia ya es NO
-      // CUMPLE, no hay una zona intermedia "en riesgo" que marcar acá.
-      return !!tol && tol.max > 0 && cs.rollupPct[k] >= tol.max * RISK_THRESHOLD;
-    });
-  });
+      const max = tol ? toleranceMax(tol, tier) : 0;
+      // Tolerancia 0: cualquier ocurrencia ya es NO CUMPLE, no hay una zona
+      // intermedia "en riesgo" que marcar acá.
+      return max > 0 && cs.rollupPct[k] >= max * RISK_THRESHOLD;
+    })
+  );
 }
 
 /** Formatea una fracción 0-1 como porcentaje con 2 decimales (ej. 0.1212 -> "12.12%"). */
@@ -193,13 +204,9 @@ export function emptyClamshell(muestraId: string, nClamshell: number): Clamshell
     id: crypto.randomUUID(),
     muestraId,
     nClamshell,
-    peso: null,
     nBayasEvaluadas: 99,
     counts,
     nota: null,
-    pesoCorrecto: true,
-    trazabilidadConforme: true,
-    calibreCorrecto: true,
     observacion: "",
   };
 }
@@ -211,4 +218,5 @@ export function normalizeCounts(counts?: Record<string, number>): Record<string,
   return out;
 }
 
-export { DEFECT_BY_KEY };
+export { DEFECT_BY_KEY, resolveDestinoTier };
+export type { DestinoTier };

@@ -2,18 +2,19 @@
  * EXPORTACIÓN E INTEGRACIÓN CON EXCEL — sin descuadres.
  *
  * 1) copyMuestraToClipboard / copyManyToClipboard:
- *    Genera las filas en las 124 columnas exactas, delimitadas por TAB, y las
+ *    Genera las filas en las 130 columnas exactas, delimitadas por TAB, y las
  *    copia al portapapeles. Al hacer Ctrl+V sobre la primera celda de datos de
  *    la hoja "Base de Datos", cada valor cae en su columna sin mover encabezados.
  *
  * 2) downloadXlsx:
- *    Descarga un .xlsx nativo con la hoja "Base de Datos" (124 columnas + datos)
- *    y reproduce las hojas secundarias "Tolerancias" y "Control de Cambios".
+ *    Descarga un .xlsx nativo con la hoja "Base de Datos" (130 columnas + datos)
+ *    y reproduce las hojas secundarias "Defectos" (tolerancias por destino) y
+ *    "Control de Cambios".
  */
 
 import * as XLSX from "xlsx";
-import { HEADERS_124, buildMuestraRows, rowsToTSV } from "./columns";
-import { TOLERANCES, TOLERANCE_SUMA } from "./defects";
+import { HEADERS_BASE_DATOS, buildMuestraRows, rowsToTSV } from "./columns";
+import { TOLERANCES } from "./defects";
 import type { Muestra } from "./types";
 
 /** Copia una muestra (todas sus filas de clamshell) al portapapeles como TSV. */
@@ -51,21 +52,21 @@ export function downloadXlsx(muestras: Muestra[], filename = "Base_de_Datos_Insp
 
   // ── Hoja "Base de Datos" ──────────────────────────────────────────────
   const dataRows = muestras.flatMap(buildMuestraRows);
-  const aoa: (string | number)[][] = [HEADERS_124.map((h) => h.replace(/\n/g, " ")), ...dataRows];
+  const aoa: (string | number)[][] = [HEADERS_BASE_DATOS.map((h) => h.replace(/\n/g, " ")), ...dataRows];
   const wsData = XLSX.utils.aoa_to_sheet(aoa);
-  wsData["!cols"] = HEADERS_124.map(() => ({ wch: 16 }));
+  wsData["!cols"] = HEADERS_BASE_DATOS.map(() => ({ wch: 16 }));
   XLSX.utils.book_append_sheet(wb, wsData, "Base de Datos");
 
-  // ── Hoja "Tolerancias" ────────────────────────────────────────────────
-  const tolAoa: (string | number)[][] = [
-    ["CATEGORÍA", "% MÁXIMO", "REGLA"],
-    ...TOLERANCES.map((t) => [t.label, t.max, `<= ${(t.max * 100).toFixed(2)}% = CUMPLE`]),
-    [TOLERANCE_SUMA.label, TOLERANCE_SUMA.max, `<= ${(TOLERANCE_SUMA.max * 100).toFixed(2)}% = CUMPLE`],
+  // ── Hoja "Defectos" (tolerancias por destino) ──────────────────────────
+  const tolAoa: (string | number | null)[][] = [
+    ["CLASIFICACIÓN", "CHINA", "EUROPA/USA", "USA SWEETEST BATCH"],
+    ...TOLERANCES.map((t) => [t.label, t.china, t.europa_usa, t.usa_sweetest_batch]),
     [],
     ["Nota", "NOTA = 15 equivale a CUMPLE en ESTÁNDAR /CLAMSHELL"],
+    ["Nota", "USA SWEETEST BATCH aplica cuando el destino es USA y el embalaje caja contiene \"SWEETEST BATCH\"; si no, USA usa la columna EUROPA/USA."],
   ];
   const wsTol = XLSX.utils.aoa_to_sheet(tolAoa);
-  XLSX.utils.book_append_sheet(wb, wsTol, "Tolerancias");
+  XLSX.utils.book_append_sheet(wb, wsTol, "Defectos");
 
   // ── Hoja "Control de Cambios" ─────────────────────────────────────────
   const ccAoa: (string | number)[][] = [
