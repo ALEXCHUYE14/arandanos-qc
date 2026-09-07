@@ -92,3 +92,36 @@ async function cacheCatalogosFromMuestra(m: Muestra) {
 export async function getCatalogo(tipo: string): Promise<CatalogoEntry[]> {
   return db.catalogos.where("tipo").equals(tipo).toArray();
 }
+
+/**
+ * Corrección puntual: el nombre de la inspectora se guardó mal escrito
+ * ("Betzy" en vez de "Betsy") antes de que se detectara el error. Ese valor
+ * vive en IndexedDB de cada dispositivo donde se haya cargado una muestra
+ * con ese nombre — no es algo que se pueda arreglar por SQL en el servidor,
+ * porque cada navegador tiene su propia copia local. Esta función corre una
+ * vez en cada arranque de la app (ver Providers) y corrige, en ESTE
+ * dispositivo, tanto las muestras ya guardadas como la sugerencia cacheada
+ * del autocompletado. Es idempotente: si no queda ningún registro con el
+ * nombre viejo, no hace nada — es seguro que corra en cada carga de la app,
+ * en todos los dispositivos, para siempre.
+ */
+export async function fixInspectorNameTypo(): Promise<void> {
+  if (!db) return;
+  const OLD_NAME = "Betzy Crisanto Valdiviezo";
+  const NEW_NAME = "Betsy Crisanto Valdiviezo";
+
+  const todas = await db.muestras.toArray();
+  for (const m of todas) {
+    if (m.inspector === OLD_NAME) {
+      m.inspector = NEW_NAME;
+      m.sync = "pending"; // para que la corrección también suba al servidor
+      await db.muestras.put(m);
+    }
+  }
+
+  const entradaVieja = await db.catalogos.get(["inspector", OLD_NAME]);
+  if (entradaVieja) {
+    await db.catalogos.delete(["inspector", OLD_NAME]);
+    await db.catalogos.put({ ...entradaVieja, valor: NEW_NAME });
+  }
+}
