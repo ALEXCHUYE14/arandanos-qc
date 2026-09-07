@@ -382,7 +382,12 @@ create policy profiles_update on public.profiles
 create or replace function public.prevent_self_role_escalation()
 returns trigger language plpgsql as $$
 begin
-  if new.rol is distinct from old.rol and not public.is_jefatura() then
+  -- auth.uid() es null cuando no hay sesión de app en la request (SQL Editor,
+  -- migraciones, acceso directo a la base con las credenciales del proyecto)
+  -- — eso ya implica ser dueño del proyecto, así que se confía. Lo que este
+  -- trigger bloquea es que un usuario AUTENTICADO desde la app (no jefatura)
+  -- se auto-asigne el rol vía un PATCH directo al REST API.
+  if new.rol is distinct from old.rol and auth.uid() is not null and not public.is_jefatura() then
     raise exception 'No autorizado para cambiar el rol de un perfil';
   end if;
   return new;
