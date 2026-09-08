@@ -9,6 +9,7 @@
 
 import Dexie, { type Table } from "dexie";
 import type { Muestra } from "./types";
+import { LISTA_MAESTRA } from "./listaMaestra";
 
 export interface CatalogoEntry {
   tipo: string; // 'inspector' | 'empacador' | 'supervisor' | 'cliente' | ...
@@ -87,6 +88,8 @@ async function cacheCatalogosFromMuestra(m: Muestra) {
   add("embalaje_caja", m.embalajeCaja);
   add("embalaje_clamshell", m.embalajeClamshell);
   add("tipo_empaque", m.tipoEmpaque);
+  add("linea", m.linea);
+  add("intervalo_cosecha", m.intervaloCosecha);
   if (entries.length) await db.catalogos.bulkPut(entries);
 }
 
@@ -155,4 +158,54 @@ export async function fixInspectorNameTypo(): Promise<void> {
     await db.catalogos.delete(["inspector", OLD_NAME]);
     await db.catalogos.put({ ...entradaVieja, valor: NEW_NAME });
   }
+}
+
+/**
+ * Siembra las listas desplegables de "Nueva muestra" con los valores reales
+ * de la hoja "Lista Maestra" del Excel del cliente (lib/listaMaestra.ts).
+ *
+ * Sin esto, las listas de Cliente/Destino/Variedad/etc. arrancan VACÍAS en
+ * cada dispositivo nuevo — el autocompletado solo aprendía de lo que un
+ * inspector ya había tipeado antes en ESE celular puntual, así que un
+ * dispositivo recién instalado no ofrecía ninguna opción real del cliente.
+ *
+ * Corre una vez en cada arranque de la app (ver Providers), igual que
+ * fixInspectorNameTypo(). Es idempotente y no destructivo: usa `put` (no
+ * `add`), así que si un inspector ya cargó a mano un valor que coincide
+ * exactamente con uno de referencia, simplemente lo deja como está — nunca
+ * borra ni pisa un valor que el usuario haya escrito distinto.
+ */
+export async function seedListaMaestra(): Promise<void> {
+  if (!db) return;
+  const entries: CatalogoEntry[] = [];
+  const addMany = (tipo: string, valores: readonly (string | number)[]) => {
+    const vistos = new Set<string>();
+    for (const v of valores) {
+      const valor = String(v).trim();
+      if (!valor || vistos.has(valor)) continue;
+      vistos.add(valor);
+      entries.push({ tipo, valor });
+    }
+  };
+
+  addMany("cliente", LISTA_MAESTRA.clientes);
+  addMany("destino", LISTA_MAESTRA.destinos);
+  addMany("formato", LISTA_MAESTRA.formatos);
+  addMany("calibre", LISTA_MAESTRA.calibres);
+  addMany("tipo_empaque", LISTA_MAESTRA.tiposEmpaque);
+  addMany("embalaje_caja", LISTA_MAESTRA.embalajesCaja);
+  addMany("embalaje_clamshell", LISTA_MAESTRA.etiquetasClamshell);
+  addMany("variedad", LISTA_MAESTRA.variedades);
+  addMany("productor", LISTA_MAESTRA.productores);
+  addMany("linea", LISTA_MAESTRA.lineas);
+  addMany("intervalo_cosecha", LISTA_MAESTRA.intervalosCosecha);
+  addMany("empacador", LISTA_MAESTRA.empacadores);
+
+  // Inspectores: van con su DNI real (columna "extra"), así el
+  // autocompletado nombre→DNI y DNI→nombre funciona también con estos.
+  for (const insp of LISTA_MAESTRA.inspectores) {
+    entries.push({ tipo: "inspector", valor: insp.nombre.trim(), extra: insp.dni });
+  }
+
+  await db.catalogos.bulkPut(entries);
 }

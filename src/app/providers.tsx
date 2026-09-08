@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNet } from "@/lib/store";
 import { fullSync } from "@/lib/sync";
-import { fixInspectorNameTypo } from "@/lib/db";
+import { fixInspectorNameTypo, seedListaMaestra } from "@/lib/db";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useAuthSync } from "@/hooks/useAuthSync";
 
@@ -49,14 +49,16 @@ export function Providers({ children }: { children: React.ReactNode }) {
     window.addEventListener("online", on);
     window.addEventListener("offline", off);
 
-    // Corrección puntual de datos locales (ver lib/db.ts) antes de
-    // sincronizar, para que si corrige algo, esa corrección sea lo que suba.
-    fixInspectorNameTypo()
-      .catch((e) => console.error("[fix] fixInspectorNameTypo", e))
-      .finally(() => {
-        // Sincroniza al arrancar y luego cada 60s si hay conexión.
-        runSync();
-      });
+    // Corrección puntual de datos locales + siembra de las listas
+    // desplegables reales del cliente (ver lib/db.ts), antes de sincronizar
+    // (para que si corrige algo, esa corrección sea lo que suba).
+    Promise.all([
+      fixInspectorNameTypo().catch((e) => console.error("[fix] fixInspectorNameTypo", e)),
+      seedListaMaestra().catch((e) => console.error("[fix] seedListaMaestra", e)),
+    ]).finally(() => {
+      // Sincroniza al arrancar y luego cada 60s si hay conexión.
+      runSync();
+    });
     const iv = setInterval(() => {
       if (navigator.onLine) runSync();
     }, 60_000);

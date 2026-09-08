@@ -132,10 +132,7 @@ export function MuestraHeaderForm({
               <option value="NOCHE">NOCHE</option>
             </Select>
           </div>
-          <div>
-            <Label>Intervalo de cosecha</Label>
-            <Input value={m.intervaloCosecha} onChange={(e) => set("intervaloCosecha", e.target.value)} />
-          </div>
+          <Autocomplete label="Intervalo de cosecha" tipo="intervalo_cosecha" value={m.intervaloCosecha} onChange={(v) => set("intervaloCosecha", v)} />
           <Autocomplete label="Productor" tipo="productor" value={m.productor} onChange={(v) => set("productor", v)} />
         </div>
       </section>
@@ -178,10 +175,7 @@ export function MuestraHeaderForm({
             />
           </div>
           <Autocomplete label="Supervisor de producción" tipo="supervisor" value={m.supervisor} onChange={(v) => set("supervisor", v)} />
-          <div>
-            <Label>Línea de empaque</Label>
-            <Input value={m.linea} onChange={(e) => set("linea", e.target.value)} />
-          </div>
+          <Autocomplete label="Línea de empaque" tipo="linea" value={m.linea} onChange={(v) => set("linea", v)} />
           <Autocomplete
             label="Empacador *"
             tipo="empacador"
