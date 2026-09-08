@@ -199,12 +199,14 @@ export async function seedListaMaestra(): Promise<void> {
   addMany("productor", LISTA_MAESTRA.productores);
   addMany("linea", LISTA_MAESTRA.lineas);
   addMany("intervalo_cosecha", LISTA_MAESTRA.intervalosCosecha);
-  addMany("empacador", LISTA_MAESTRA.empacadores);
 
-  // Inspectores: van con su DNI real (columna "extra"), así el
+  // Inspectores y empacadores: van con su DNI real (columna "extra"), así el
   // autocompletado nombre→DNI y DNI→nombre funciona también con estos.
   for (const insp of LISTA_MAESTRA.inspectores) {
     entries.push({ tipo: "inspector", valor: insp.nombre.trim(), extra: insp.dni });
+  }
+  for (const emp of LISTA_MAESTRA.empacadores) {
+    entries.push({ tipo: "empacador", valor: emp.nombre.trim(), extra: emp.dni });
   }
 
   await db.catalogos.bulkPut(entries);
