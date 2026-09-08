@@ -99,11 +99,23 @@ export default function ReportePage() {
         </div>
       </div>
 
-      {/* Reporte (con scroll horizontal en móvil) */}
+      {/* Reporte visible — responsivo, se adapta al ancho de la pantalla */}
       <div className="overflow-x-auto">
         <div className="rounded-lg border border-line shadow-sm">
-          <ReportView ref={ref} muestra={m} />
+          <ReportView variant="screen" muestra={m} />
         </div>
+      </div>
+
+      {/*
+        Copia oculta con el ancho fijo de siempre (820px), fuera de la
+        pantalla. Solo existe para que exportPNG()/exportPDF() la capturen
+        con html2canvas — así el PNG/PDF compartido por WhatsApp mantiene
+        siempre el mismo layout nítido, sin importar si quien exporta lo hace
+        desde el celular o la computadora. No se ve en pantalla ni afecta la
+        vista responsiva de arriba.
+      */}
+      <div aria-hidden style={{ position: "fixed", top: 0, left: -99999 }}>
+        <ReportView ref={ref} variant="export" muestra={m} />
       </div>
     </main>
   );

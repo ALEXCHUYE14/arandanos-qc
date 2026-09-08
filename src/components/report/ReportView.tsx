@@ -9,20 +9,38 @@ import type { Muestra } from "@/lib/types";
 const DEFECT_LABEL = Object.fromEntries(DEFECTS.map((d) => [d.key, d.label]));
 const DEFECT_CAT = Object.fromEntries(DEFECTS.map((d) => [d.key, d.category]));
 
+type ReportViewProps = {
+  muestra: Muestra;
+  /**
+   * "export" (por defecto): ancho fijo de 820px, tal como antes — se usa para
+   * capturar el reporte con html2canvas y generar el PNG/PDF, así ese export
+   * mantiene siempre el mismo layout nítido sin importar el dispositivo.
+   * "screen": responsivo, sin ancho fijo — se usa para mostrar el reporte en
+   * pantalla (incluido el celular), con las columnas apilándose en 1 sola
+   * columna en pantallas chicas en vez de achicarse hasta quedar ilegible.
+   */
+  variant?: "export" | "screen";
+};
+
 /**
- * Reporte visual ejecutivo — réplica 1:1 de la evaluación en Excel, optimizado
- * para exportar a PDF/PNG y compartir por WhatsApp. Ancho fijo para render nítido.
+ * Reporte visual ejecutivo — réplica 1:1 de la evaluación en Excel.
+ * Ver `variant` arriba: la app renderiza dos instancias (una visible y
+ * responsiva, otra oculta con ancho fijo solo para exportar) — ver
+ * app/reporte/[id]/page.tsx.
  */
-export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
-  function ReportView({ muestra: m }, ref) {
+export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
+  function ReportView({ muestra: m, variant = "export" }, ref) {
     const r = computeMuestra(m);
     const cumple = r.cumple;
+    const isExport = variant === "export";
 
     return (
       <div
         ref={ref}
-        style={{ width: 820 }}
-        className="mx-auto bg-white p-6 text-[#0F172A]"
+        style={isExport ? { width: 820 } : undefined}
+        className={`mx-auto bg-white text-[#0F172A] ${
+          isExport ? "p-6" : "w-full max-w-[820px] p-3 sm:p-6"
+        }`}
       >
         {/* Título */}
         <h1 className="mb-4 text-center text-[15px] font-bold uppercase leading-snug tracking-wide">
@@ -31,7 +49,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
 
         {/* Cabecera de muestra */}
         <div className="mb-3 rounded-lg border border-[#E2E8F0] p-4">
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="text-[15px] font-bold">
               MUESTRA: <span className="font-mono">{m.codigo}</span>
             </div>
@@ -43,7 +61,11 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
               {cumple ? "✓ CUMPLE" : "✗ NO CUMPLE"}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-[13px]">
+          <div
+            className={`grid gap-x-8 gap-y-1.5 text-[13px] ${
+              isExport ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"
+            }`}
+          >
             <Field label="Fecha de cosecha" value={fmtDateUI(m.fechaCosecha)} />
             <Field label="Fecha de empaque" value={fmtDateUI(m.fechaEmpaque)} />
             <Field label="Planta de Empaque" value={m.nPlanta ?? "—"} />
@@ -54,7 +76,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
         </div>
 
         {/* Personal + Especificaciones */}
-        <div className="mb-3 grid grid-cols-2 gap-3">
+        <div className={`mb-3 grid gap-3 ${isExport ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"}`}>
           <div className="rounded-lg border border-[#E2E8F0] p-4">
             <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-[#64748B]">Personal</h3>
             <div className="space-y-1.5 text-[13px]">
@@ -81,7 +103,11 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
         </div>
 
         {/* KPIs */}
-        <div className="mb-3 grid grid-cols-4 gap-3 rounded-lg border border-[#E2E8F0] p-4">
+        <div
+          className={`mb-3 grid gap-3 rounded-lg border border-[#E2E8F0] p-4 ${
+            isExport ? "grid-cols-4" : "grid-cols-2 sm:grid-cols-4"
+          }`}
+        >
           <Kpi label="Total Bayas" value={String(r.totalBayas)} color="#0F172A" />
           <Kpi label="Cat 1" value={`${(r.pctCat1 * 100).toFixed(1)}%`} color="#0F172A" />
           <Kpi label="Aprovechable" value={`${(r.pctAprovechable * 100).toFixed(1)}%`} color="#16A34A" />
@@ -98,7 +124,9 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
             return (
               <div
                 key={cr.nClamshell}
-                className="grid grid-cols-2 gap-4 rounded-lg border border-[#E2E8F0] p-4"
+                className={`grid gap-4 rounded-lg border border-[#E2E8F0] p-4 ${
+                  isExport ? "grid-cols-2" : "grid-cols-1 sm:grid-cols-2"
+                }`}
               >
                 <div>
                   <h4 className="mb-2 text-[13px] font-bold">CLAMSHELL {cr.nClamshell}</h4>
@@ -163,7 +191,7 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-1">
       <span className="text-[#64748B]">{label}:</span>
       <span className="font-semibold">{value}</span>
     </div>
@@ -180,4 +208,3 @@ function Kpi({ label, value, color }: { label: string; value: string; color: str
     </div>
   );
 }
-
