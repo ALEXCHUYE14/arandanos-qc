@@ -13,7 +13,24 @@
  */
 
 export const LISTA_MAESTRA = {
-  clientes: ["PENGSHENG", "OZBLUE", "DRISCOLL´S", "BERRIES PRIDE BV"],
+  // Los primeros 4 vienen de la hoja "Lista Maestra" del Excel de referencia;
+  // el resto los agregó el usuario directamente (07/09/2026), no están en
+  // ese archivo. "OZBLU" y "ENGSHENG" quedan tal cual se pidieron, aunque se
+  // parecen mucho a "OZBLUE" y "PENGSHENG" ya existentes — no asumí que
+  // fueran errores de tipeo para no borrar un cliente real por equivocación.
+  clientes: [
+    "PENGSHENG",
+    "OZBLUE",
+    "DRISCOLL´S",
+    "BERRIES PRIDE BV",
+    "OZBLU",
+    "GLOBAL BERRY S.L.",
+    "THUNG SHING",
+    "PAGODA",
+    "RIVERKING",
+    "ENGSHENG",
+    "XIANFENG",
+  ],
 
   destinos: ["CHINA", "USA", "EUROPA"],
 
