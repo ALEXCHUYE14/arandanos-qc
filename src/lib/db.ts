@@ -208,4 +208,22 @@ export async function seedListaMaestra(): Promise<void> {
   }
 
   await db.catalogos.bulkPut(entries);
+  await limpiarClientesDuplicados();
+}
+
+/**
+ * "OZBLU" y "ENGSHENG" se agregaron un momento como clientes nuevos a pedido
+ * del usuario, pero resultaron ser el mismo cliente que "OZBLUE" y
+ * "PENGSHENG" (ya en la lista) — el usuario lo confirmó. seedListaMaestra()
+ * solo agrega, nunca borra, así que cualquier dispositivo que ya haya
+ * sembrado esas dos entradas las conserva para siempre si no se borran acá
+ * explícitamente. Igual que fixInspectorNameTypo(): corre en cada arranque,
+ * no rompe nada si ya no queda nada que borrar.
+ */
+async function limpiarClientesDuplicados(): Promise<void> {
+  const DUPLICADOS = ["OZBLU", "ENGSHENG"];
+  for (const nombre of DUPLICADOS) {
+    const entrada = await db.catalogos.get(["cliente", nombre]);
+    if (entrada) await db.catalogos.delete(["cliente", nombre]);
+  }
 }
