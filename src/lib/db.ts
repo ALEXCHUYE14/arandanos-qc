@@ -95,6 +95,36 @@ export async function getCatalogo(tipo: string): Promise<CatalogoEntry[]> {
 }
 
 /**
+ * Busca en el catálogo (inspector/empacador) una entrada cuyo `extra` (el DNI
+ * guardado junto al nombre) coincida con el DNI tipeado. Permite autocompletar
+ * el nombre a partir del DNI, no solo el DNI a partir del nombre. Si no hay
+ * ninguna coincidencia (personal nuevo, todavía no registrado), devuelve
+ * `undefined` sin error — el campo queda en blanco para completarse después.
+ */
+export async function getCatalogoByExtra(tipo: string, extra: string): Promise<CatalogoEntry | undefined> {
+  if (!extra || !extra.trim()) return undefined;
+  const lista = await db.catalogos.where("tipo").equals(tipo).toArray();
+  return lista.find((c) => c.extra === extra.trim());
+}
+
+/**
+ * Recuerda el N° de bayas evaluadas típico de un empacador (la cantidad casi
+ * siempre se repite dentro del mismo lote/empacador). Se guarda en el mismo
+ * catálogo, con tipo "bayas_evaluadas" y el nombre del empacador como valor.
+ */
+export async function setBayasEvaluadasDefault(empacador: string, bayas: number): Promise<void> {
+  if (!empacador || !empacador.trim() || !bayas) return;
+  await db.catalogos.put({ tipo: "bayas_evaluadas", valor: empacador.trim(), extra: String(bayas) });
+}
+
+export async function getBayasEvaluadasDefault(empacador: string): Promise<number | undefined> {
+  if (!empacador || !empacador.trim()) return undefined;
+  const entry = await db.catalogos.get(["bayas_evaluadas", empacador.trim()]);
+  const n = entry?.extra ? parseInt(entry.extra, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/**
  * Corrección puntual: el nombre de la inspectora se guardó mal escrito
  * ("Betzy" en vez de "Betsy") antes de que se detectara el error. Ese valor
  * vive en IndexedDB de cada dispositivo donde se haya cargado una muestra

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2, FileText, Copy, Check, PackagePlus } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, FileText, Copy, Check, PackagePlus, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,10 @@ export default function CapturaPage() {
   function addClamshell() {
     const n = (clamshells.at(-1)?.nClamshell ?? 0) + 1;
     const cs = emptyClamshell(draft!.id, n);
+    // El N° de bayas evaluadas casi siempre se repite dentro del mismo lote
+    // — se hereda del clamshell anterior en vez de arrancar de nuevo en 99.
+    const anterior = clamshells.at(-1);
+    if (anterior?.nBayasEvaluadas) cs.nBayasEvaluadas = anterior.nBayasEvaluadas;
     patch({ ...draft!, clamshells: [...draft!.clamshells, cs] });
     setTab(clamshells.length);
   }
@@ -80,6 +84,18 @@ export default function CapturaPage() {
     await copyMuestraToClipboard(draft!);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  /**
+   * Guarda de inmediato (sin esperar los 400ms del debounce) y vuelve a la
+   * lista. El autoguardado ya corre solo desde el primer cambio — este botón
+   * no cambia esa lógica, es una confirmación explícita para que el
+   * inspector pueda pausar y salir con la tranquilidad de que quedó guardado.
+   */
+  async function guardarYSalir() {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    await updateMuestra(draft!);
+    router.push("/inspector");
   }
 
   return (
@@ -168,6 +184,9 @@ export default function CapturaPage() {
       {/* Barra de acciones fija */}
       <div className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5">
+          <Button variant="outline" className="flex-1" onClick={guardarYSalir}>
+            <Save className="h-4 w-4" /> Guardar y salir
+          </Button>
           <Button variant="outline" className="flex-1" onClick={copiar}>
             {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
             {copied ? "¡Copiado!" : "Copiar fila Excel"}

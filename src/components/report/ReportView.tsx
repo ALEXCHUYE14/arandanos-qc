@@ -110,14 +110,14 @@ export const ReportView = forwardRef<HTMLDivElement, { muestra: Muestra }>(
                         <div key={key} className="flex items-center justify-between gap-3 text-[13px]">
                           <span
                             className={`font-semibold ${
-                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#EA580C]"
+                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
                             }`}
                           >
                             {DEFECT_LABEL[key]}
                           </span>
                           <span
                             className={`font-bold ${
-                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#EA580C]"
+                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
                             }`}
                           >
                             {(pct * 100).toFixed(2)}%

@@ -19,6 +19,14 @@ export function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Hora local actual en formato "HH:MM" (para <input type="time">). */
+export function nowHHMM(): string {
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 /** N° de semana ISO 8601 a partir de una fecha. */
 export function isoWeek(date = new Date()): number {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));

@@ -16,7 +16,7 @@ import {
   getCatalogo,
 } from "@/lib/db";
 import { makeCodigo, emptyClamshell } from "@/lib/calc";
-import { todayISO, isoWeek } from "@/lib/utils";
+import { todayISO, isoWeek, nowHHMM } from "@/lib/utils";
 import type { Muestra } from "@/lib/types";
 import { useSession, useAuth } from "@/lib/store";
 
@@ -56,7 +56,10 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
     codigo: makeCodigo(seq),
     idMaestro: seq,
     semana: isoWeek(),
-    horaEvaluacion: "",
+    // Automático al crear (hora real de inicio de la evaluación); el
+    // inspector puede corregirla a mano si empieza a cargar más tarde de lo
+    // que efectivamente evaluó.
+    horaEvaluacion: nowHHMM(),
     fechaCosecha: todayISO(),
     fechaEmpaque: todayISO(),
     nPlanta: session.nPlanta,

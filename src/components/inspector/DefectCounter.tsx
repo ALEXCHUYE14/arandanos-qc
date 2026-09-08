@@ -26,7 +26,7 @@ export function DefectCounter({
     <div
       className={cn(
         "flex items-center gap-2 rounded-md border px-2 py-1.5",
-        active ? (critical ? "border-danger/30 bg-danger/5" : "border-warning/30 bg-warning/5") : "border-line bg-surface"
+        active ? (critical ? "border-danger/30 bg-danger/5" : "border-success/30 bg-success/5") : "border-line bg-surface"
       )}
     >
       <div className="min-w-0 flex-1">
@@ -34,7 +34,7 @@ export function DefectCounter({
           {def.label}
         </p>
         {active && (
-          <p className={cn("text-[11px] font-semibold", critical ? "text-danger" : "text-warning")}>
+          <p className={cn("text-[11px] font-semibold", critical ? "text-danger" : "text-success")}>
             {(pct * 100).toFixed(2)}%
           </p>
         )}

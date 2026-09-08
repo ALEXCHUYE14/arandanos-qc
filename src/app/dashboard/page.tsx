@@ -21,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select, Label } from "@/components/ui/input";
 import { DescarteEmpacadorChart, TendenciaSemanalChart } from "@/components/dashboard/Charts";
+import { ToleranciaMercado } from "@/components/dashboard/ToleranciaMercado";
 import { useMuestrasCloud } from "@/hooks/useMuestrasCloud";
 import { computeMuestra, computeRiesgo } from "@/lib/calc";
 import { overview, porEmpacador, porSemana } from "@/lib/analytics";
@@ -221,6 +222,11 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Tolerancia por mercado (China / Europa / EE.UU.) */}
+      <div className="mb-4">
+        <ToleranciaMercado muestras={filtered} />
+      </div>
 
       {/* Gráficos */}
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
