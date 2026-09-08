@@ -1,8 +1,8 @@
 "use client";
 
 import { forwardRef } from "react";
-import { computeMuestra } from "@/lib/calc";
-import { DEFECTS } from "@/lib/defects";
+import { computeMuestra, resolveDestinoTier } from "@/lib/calc";
+import { DEFECTS, ROLLUP_LABEL, TOLERANCE_BY_KEY, toleranceMax } from "@/lib/defects";
 import { fmtDateUI } from "@/lib/utils";
 import type { Muestra } from "@/lib/types";
 
@@ -33,6 +33,10 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
     const r = computeMuestra(m);
     const cumple = r.cumple;
     const isExport = variant === "export";
+    // Tope de tolerancia de "RESIDUOS DE COSECHA" según destino/embalaje de
+    // ESTA muestra (mismo criterio que usa el cálculo, ver lib/defects.ts).
+    const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+    const topeResiduos = toleranceMax(TOLERANCE_BY_KEY.residuos_cosecha, tier);
 
     return (
       <div
@@ -82,8 +86,9 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
             <div className="space-y-1.5 text-[13px]">
               <Field label="Inspector de calidad" value={m.inspector || "—"} />
               <Field label="Línea" value={m.linea || "—"} />
-              <Field label="Supervisor" value={m.supervisor || "—"} />
+              <Field label="Supervisor de producción" value={m.supervisor || "—"} />
               <Field label="Empacador" value={m.empacador || "—"} />
+              <Field label="DNI empacador" value={m.dniEmpacador || "—"} />
             </div>
           </div>
           <div className="rounded-lg border border-[#E2E8F0] p-4">
@@ -98,6 +103,7 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
               <Field label="Tipo de empaque" value={m.tipoEmpaque || "—"} />
               <Field label="Calibre" value={m.calibre || "—"} />
               <Field label="Peso establecido" value={m.pesoEstablecido ? `${m.pesoEstablecido}g` : "—"} />
+              <Field label="Embalaje caja" value={m.embalajeCaja || "—"} />
             </div>
           </div>
         </div>
@@ -130,6 +136,29 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
               >
                 <div>
                   <h4 className="mb-2 text-[13px] font-bold">CLAMSHELL {cr.nClamshell}</h4>
+
+                  {/* Resumen de "RESIDUOS DE COSECHA" (corola, resto floral verde,
+                      pedúnculo) contra el tope de tolerancia del destino — se
+                      muestra siempre, aunque esté en 0%, para que quede visible
+                      en el reporte cuánto suma esta clasificación. */}
+                  <div
+                    className={`mb-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[12px] ${
+                      cr.rollupCumple.residuos_cosecha
+                        ? "border-[#E2E8F0] bg-[#F8FAFC]"
+                        : "border-[#FCA5A5] bg-[#FEF2F2]"
+                    }`}
+                  >
+                    <span className="font-semibold">{ROLLUP_LABEL.residuos_cosecha}</span>
+                    <span
+                      className={`font-bold ${
+                        cr.rollupCumple.residuos_cosecha ? "text-[#16A34A]" : "text-[#DC2626]"
+                      }`}
+                    >
+                      {((cr.rollupPct.residuos_cosecha || 0) * 100).toFixed(2)}%{" "}
+                      <span className="font-normal text-[#94A3B8]">/ tope {(topeResiduos * 100).toFixed(0)}%</span>
+                    </span>
+                  </div>
+
                   {defectsShown.length === 0 ? (
                     <p className="text-[13px] text-[#16A34A]">Sin defectos registrados</p>
                   ) : (
@@ -155,11 +184,15 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
                     </div>
                   )}
                 </div>
-                <div>
-                  <p className="text-[13px]">
-                    {cr.nBayasEvaluadas} bayas · Nota {cr.nota} ·{" "}
-                    <span className={cr.cumple ? "text-[#16A34A]" : "text-[#DC2626]"}>{cr.estandar}</span>
-                  </p>
+                <div className="space-y-1.5 text-[13px]">
+                  <Field label="N° bayas evaluadas" value={cr.nBayasEvaluadas} />
+                  <Field label="Nota" value={cr.nota} />
+                  <Field
+                    label="Estándar"
+                    value={
+                      <span className={cr.cumple ? "text-[#16A34A]" : "text-[#DC2626]"}>{cr.estandar}</span>
+                    }
+                  />
                 </div>
               </div>
             );
