@@ -3,23 +3,56 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Plus, ChevronRight, Home, ClipboardList, AlertTriangle } from "lucide-react";
+import { Plus, ChevronRight, Home, ClipboardList, AlertTriangle, FileSpreadsheet, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useMuestras, createMuestra } from "@/hooks/useMuestras";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useMuestras, createMuestra, removeMuestra } from "@/hooks/useMuestras";
 import { computeMuestra } from "@/lib/calc";
-import { fmtDateUI } from "@/lib/utils";
+import { fmtDateUI, todayISO } from "@/lib/utils";
+import { downloadXlsx } from "@/lib/excel";
 import { resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
 
 export default function InspectorListPage() {
   const router = useRouter();
   const muestras = useMuestras() ?? [];
   const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [limpiando, setLimpiando] = useState(false);
 
   async function nueva() {
     const m = await createMuestra();
     router.push(`/inspector/muestra/${m.id}`);
+  }
+
+  /** Descarga TODAS las muestras de esta lista en un único Excel — antes
+   *  solo se podía exportar una muestra a la vez (PNG/PDF individual desde
+   *  el reporte). Reutiliza downloadXlsx(), la misma función que ya usa el
+   *  panel del Coordinador de Calidad para su "Exportar XLSX". */
+  function descargarTodo() {
+    downloadXlsx(muestras, `Muestras_${todayISO()}.xlsx`);
+  }
+
+  /**
+   * Limpia la lista de muestras de ESTE dispositivo (borrado local, con
+   * confirmación explícita — ver el modal más abajo). Las muestras que ya
+   * se sincronizaron siguen a salvo en el servidor (panel del Coordinador de
+   * Calidad); si este dispositivo vuelve a sincronizar más adelante, podrían
+   * volver a aparecer acá, porque esto NO las borra de Supabase — solo
+   * "vacía" la vista local. Se avisa de esto en el propio modal para no
+   * prometer más de lo que la acción realmente hace.
+   */
+  async function limpiarRegistros() {
+    setLimpiando(true);
+    try {
+      await Promise.all(muestras.map((m) => removeMuestra(m.id)));
+    } catch (e) {
+      console.error("[limpiar registros] no se pudo borrar alguna muestra", e);
+    } finally {
+      setLimpiando(false);
+      setConfirmOpen(false);
+    }
   }
 
   async function keepLocal(id: string) {
@@ -46,16 +79,28 @@ export default function InspectorListPage() {
 
   return (
     <main className="px-4 py-5">
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <Link href="/" className="mb-1 flex items-center gap-1 text-xs text-muted hover:text-ink">
             <Home className="h-3.5 w-3.5" /> Inicio
           </Link>
           <h1 className="text-xl font-bold text-ink">Mis muestras</h1>
         </div>
-        <Button onClick={nueva} size="lg">
-          <Plus className="h-5 w-5" /> Nueva muestra
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {muestras.length > 0 && (
+            <>
+              <Button variant="outline" size="sm" onClick={descargarTodo}>
+                <FileSpreadsheet className="h-4 w-4" /> Descargar todo (Excel)
+              </Button>
+              <Button variant="outline" size="sm" className="text-danger" onClick={() => setConfirmOpen(true)}>
+                <Trash2 className="h-4 w-4" /> Limpiar registros
+              </Button>
+            </>
+          )}
+          <Button onClick={nueva} size="lg">
+            <Plus className="h-5 w-5" /> Nueva muestra
+          </Button>
+        </div>
       </div>
 
       {muestras.length === 0 ? (
@@ -130,6 +175,25 @@ export default function InspectorListPage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="¿Limpiar registros?"
+        description={
+          <>
+            Se van a borrar las <strong>{muestras.length}</strong> muestra(s) de esta lista, en{" "}
+            <strong>este dispositivo</strong>. Esta acción no se puede deshacer.
+            <br />
+            <br />
+            Las que ya estén sincronizadas siguen a salvo en el servidor (panel del Coordinador de
+            Calidad) — si este dispositivo vuelve a sincronizar, podrían volver a aparecer acá.
+          </>
+        }
+        confirmLabel="Sí, limpiar"
+        busy={limpiando}
+        onConfirm={limpiarRegistros}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </main>
   );
 }

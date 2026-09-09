@@ -125,7 +125,7 @@ export default function DashboardPage() {
             <Home className="h-3.5 w-3.5" /> Inicio
           </Link>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-xl font-bold text-ink">Jefatura de Calidad</h1>
+            <h1 className="text-xl font-bold text-ink">Coordinador de Calidad</h1>
             {live && (
               <span className="flex items-center gap-1 rounded-full bg-success/10 px-2 py-0.5 text-[11px] font-medium text-success">
                 <Radio className="h-3 w-3" /> en vivo

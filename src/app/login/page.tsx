@@ -137,7 +137,7 @@ function LoginForm() {
 
         <div className="mt-6 space-y-2 text-center text-xs text-white/85 drop-shadow-sm">
           <p>
-            ¿No tenés cuenta? Pedile a Jefatura de Calidad que te la cree desde el panel de
+            ¿No tenés cuenta? Pedile al Coordinador de Calidad que te la cree desde el panel de
             administración.
           </p>
           <p className="flex items-center justify-center gap-1.5 text-white/70">

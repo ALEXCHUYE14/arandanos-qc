@@ -37,11 +37,11 @@ export interface Muestra {
   fechaEmpaque: string | null;
   /**
    * Planta de Empaque. Antes era un número libre ("N° planta empaque"); el
-   * cliente usa etiquetas fijas en vez de un número — ver PLANTAS_EMPAQUE en
-   * MuestraHeaderForm.tsx (es un <Select> de opciones cerradas, no un
-   * catálogo de autocompletado, porque las 3 etiquetas son fijas).
+   * cliente usa etiquetas en vez de un número (ver LISTA_MAESTRA.plantasEmpaque
+   * en lib/listaMaestra.ts) — es un campo de catálogo editable como
+   * cliente/destino/etc., no un enum cerrado, por si se suma una planta nueva.
    */
-  plantaEmpaque: string | null;
+  plantaEmpaque: string;
   linea: string; // línea de empaque (metadato del reporte; no forma parte de las columnas del maestro)
   turno: Turno;
   productor: string;

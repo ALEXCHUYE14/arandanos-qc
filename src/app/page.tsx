@@ -22,13 +22,13 @@ export default function HomePage() {
           <RoleCard
             href="/inspector"
             icon={<ClipboardCheck className="h-8 w-8" />}
-            title="Inspector de campo"
+            title="Inspector Calidad línea"
             desc="Captura rápida de muestras y clamshells, offline en línea de empaque."
           />
           <RoleCard
             href="/dashboard"
             icon={<LayoutDashboard className="h-8 w-8" />}
-            title="Jefatura de Calidad"
+            title="Coordinador de Calidad"
             desc="Supervisión en tiempo real, reportes ejecutivos y sincronización con Excel."
           />
         </div>

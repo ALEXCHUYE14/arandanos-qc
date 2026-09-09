@@ -98,6 +98,15 @@ export const LISTA_MAESTRA = {
 
   productores: ["CAO", "BERRY HARVEST"],
 
+  /**
+   * Etiquetas de "Planta de Empaque" (antes era un número libre). Lista
+   * base a pedido del cliente — a diferencia de "lineas"/"intervalosCosecha"
+   * (números fijos de la hoja del Excel), esta SÍ se siembra como catálogo
+   * editable (tipo "planta_empaque" en seedListaMaestra) para poder sumar
+   * plantas nuevas sin tocar código, igual que Cliente/Destino/etc.
+   */
+  plantasEmpaque: ["Acopio 1", "Acopio 2", "MAERSK"],
+
   /** N° de línea de empaque (columna "N° LÍNEA"): 1 a 17. */
   lineas: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
 

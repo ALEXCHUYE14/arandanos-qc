@@ -199,6 +199,7 @@ export async function seedListaMaestra(): Promise<void> {
   addMany("productor", LISTA_MAESTRA.productores);
   addMany("linea", LISTA_MAESTRA.lineas);
   addMany("intervalo_cosecha", LISTA_MAESTRA.intervalosCosecha);
+  addMany("planta_empaque", LISTA_MAESTRA.plantasEmpaque);
 
   // Inspectores y empacadores: van con su DNI real (columna "extra"), así el
   // autocompletado nombre→DNI y DNI→nombre funciona también con estos.

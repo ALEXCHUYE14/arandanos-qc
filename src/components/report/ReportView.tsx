@@ -8,6 +8,9 @@ import type { Muestra } from "@/lib/types";
 
 const DEFECT_LABEL = Object.fromEntries(DEFECTS.map((d) => [d.key, d.label]));
 const DEFECT_CAT = Object.fromEntries(DEFECTS.map((d) => [d.key, d.category]));
+/** Clasificación (rollup) de cada defecto — ej. "RESIDUOS DE COSECHA",
+ *  "OTROS DEFECTOS LEVES" — para mostrarla junto al defecto en el reporte. */
+const DEFECT_CLASIFICACION = Object.fromEntries(DEFECTS.map((d) => [d.key, ROLLUP_LABEL[d.rollup]]));
 
 type ReportViewProps = {
   muestra: Muestra;
@@ -175,15 +178,23 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
                     <div className="space-y-1">
                       {defectsShown.map(([key, pct]) => (
                         <div key={key} className="flex items-center justify-between gap-3 text-[13px]">
-                          <span
-                            className={`font-semibold ${
-                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
-                            }`}
-                          >
-                            {DEFECT_LABEL[key]}
+                          <span>
+                            <span
+                              className={`font-semibold ${
+                                DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
+                              }`}
+                            >
+                              {DEFECT_LABEL[key]}
+                            </span>
+                            {/* Clasificación (rollup) del defecto — ej. "Residuos de
+                                Cosecha", "Otros Defectos Leves" — junto al defecto,
+                                sin alterar el alto/alineación de la fila. */}
+                            <span className="ml-1 text-[10px] font-normal text-[#94A3B8]">
+                              ({DEFECT_CLASIFICACION[key]})
+                            </span>
                           </span>
                           <span
-                            className={`font-bold ${
+                            className={`shrink-0 font-bold ${
                               DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
                             }`}
                           >

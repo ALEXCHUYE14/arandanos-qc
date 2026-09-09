@@ -9,9 +9,9 @@ import type { AppUserProfile } from "./types";
 interface SessionState {
   inspectorNombre: string;
   inspectorDni: string;
-  plantaEmpaque: string | null;
+  plantaEmpaque: string;
   setInspector: (nombre: string, dni: string) => void;
-  setPlantaEmpaque: (p: string | null) => void;
+  setPlantaEmpaque: (p: string) => void;
 }
 
 export const useSession = create<SessionState>()(
@@ -19,7 +19,7 @@ export const useSession = create<SessionState>()(
     (set) => ({
       inspectorNombre: "",
       inspectorDni: "",
-      plantaEmpaque: null,
+      plantaEmpaque: "",
       setInspector: (inspectorNombre, inspectorDni) => set({ inspectorNombre, inspectorDni }),
       setPlantaEmpaque: (plantaEmpaque) => set({ plantaEmpaque }),
     }),

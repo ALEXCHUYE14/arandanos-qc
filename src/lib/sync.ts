@@ -91,7 +91,7 @@ export function rowToMuestra(r: any, clamshellRows: any[]): Muestra {
     horaEvaluacion: r.hora_evaluacion ?? "",
     fechaCosecha: r.fecha_cosecha,
     fechaEmpaque: r.fecha_empaque,
-    plantaEmpaque: r.planta_empaque,
+    plantaEmpaque: r.planta_empaque ?? "",
     linea: r.linea ?? "",
     turno: r.turno,
     productor: r.productor ?? "",

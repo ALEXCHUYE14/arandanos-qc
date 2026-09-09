@@ -1,12 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Autocomplete } from "./Autocomplete";
 import { getCatalogoByExtra, getBayasEvaluadasDefault } from "@/lib/db";
 import { isoWeek } from "@/lib/utils";
 import type { Muestra } from "@/lib/types";
+
+/** Debounce del autocompletado por DNI (ms) — evita una consulta a IndexedDB
+ *  por cada tecla mientras el inspector todavía está escribiendo el DNI. */
+const DNI_DEBOUNCE_MS = 350;
 
 /**
  * Campos que se consideran obligatorios para una evaluación completa. Se
@@ -25,13 +29,6 @@ const CAMPOS_OBLIGATORIOS: { key: keyof Muestra; label: string }[] = [
   { key: "empacador", label: "Empacador" },
 ];
 
-/**
- * Etiquetas fijas de "Planta de Empaque" (antes era un número libre). Lista
- * cerrada a pedido del cliente — por eso es un <Select>, no un Autocomplete
- * de catálogo: no hay "plantas nuevas" que un inspector pueda tipear.
- */
-const PLANTAS_EMPAQUE = ["Copia 1", "Copia 2", "MAERSK"];
-
 /** Formulario de cabecera del lote/muestra. */
 export function MuestraHeaderForm({
   m,
@@ -41,6 +38,16 @@ export function MuestraHeaderForm({
   onChange: (m: Muestra) => void;
 }) {
   const set = <K extends keyof Muestra>(k: K, v: Muestra[K]) => onChange({ ...m, [k]: v });
+
+  // La búsqueda por DNI está debounced (dispara ~350ms después de la última
+  // tecla, no en cada tecla) — para cuando dispare, `m` del closure original
+  // puede estar obsoleto si el inspector ya tocó otro campo mientras tanto.
+  // Este ref siempre tiene la versión más reciente, así el autocompletado
+  // nunca pisa un cambio hecho durante la espera del debounce.
+  const mRef = useRef(m);
+  useEffect(() => {
+    mRef.current = m;
+  }, [m]);
 
   const faltantes = useMemo(
     () => CAMPOS_OBLIGATORIOS.filter((c) => !String(m[c.key] ?? "").trim()),
@@ -54,6 +61,18 @@ export function MuestraHeaderForm({
     empacador: false,
   });
 
+  // Timers del debounce de búsqueda por DNI (uno por campo, para que tipear
+  // en "DNI inspector" no cancele una búsqueda en curso de "DNI empacador").
+  const dniTimers = useRef<Partial<Record<"inspector" | "empacador", ReturnType<typeof setTimeout>>>>({});
+  useEffect(() => {
+    const timers = dniTimers.current;
+    return () => {
+      // Limpia cualquier búsqueda pendiente si el formulario se desmonta
+      // (ej. el inspector cambia de pestaña/muestra) antes de que dispare.
+      Object.values(timers).forEach((t) => t && clearTimeout(t));
+    };
+  }, []);
+
   // Semana: se recalcula sola a partir de la fecha de empaque (la fecha que
   // más importa para el correlativo semanal del maestro). El inspector puede
   // seguir tocándola a mano después si hace falta un ajuste puntual.
@@ -63,35 +82,49 @@ export function MuestraHeaderForm({
   }
 
   // Autocompleta Apellidos y Nombre a partir del DNI (además de nombre →
-  // DNI, que ya hacía el Autocomplete), buscando en el catálogo local
-  // sembrado desde la hoja EMPACADORES / INSPECTORES DE CALIDAD del Excel de
-  // referencia (ver lib/listaMaestra.ts → seedListaMaestra en lib/db.ts).
-  // Si el DNI no está registrado (personal nuevo, o un DNI mal tipeado), NO
-  // rompe nada: se avisa con un mensaje y el campo queda en blanco para
-  // completarlo a mano, sin bloquear el guardado de la muestra.
-  async function onDniChange(
+  // DNI, que ya hacía el Autocomplete), buscando con debounce en el catálogo
+  // local sembrado desde la hoja EMPACADORES / INSPECTORES DE CALIDAD del
+  // Excel de referencia (ver lib/listaMaestra.ts → seedListaMaestra en
+  // lib/db.ts) — no hay ni necesita haber una API externa: este catálogo YA
+  // ES la fuente de datos de personal, y buscarlo local (no por red) es lo
+  // que permite que el autocompletado funcione sin señal en la línea de
+  // empaque, que es un requisito de fondo de toda la app.
+  // Si el DNI no está registrado (personal nuevo, un DNI mal tipeado, o
+  // falla la búsqueda), NO rompe nada: se avisa con un mensaje y el campo
+  // queda en blanco para completarlo a mano, sin bloquear el guardado.
+  function onDniChange(
     tipo: "inspector" | "empacador",
     dni: string,
     nombreKey: "inspector" | "empacador",
     dniKey: "dniInspector" | "dniEmpacador"
   ) {
+    // El valor tipeado se refleja de inmediato (no debounced) — solo la
+    // búsqueda/autocompletado en el catálogo espera el debounce.
     onChange({ ...m, [dniKey]: dni });
     setDniNoEncontrado((s) => ({ ...s, [tipo]: false }));
+
+    const timerPrevio = dniTimers.current[tipo];
+    if (timerPrevio) clearTimeout(timerPrevio);
     if (!dni.trim() || m[nombreKey].trim()) return; // no pisa un nombre ya cargado
-    try {
-      const match = await getCatalogoByExtra(tipo, dni);
-      if (match) {
-        onChange({ ...m, [dniKey]: dni, [nombreKey]: match.valor });
-      } else if (dni.trim().length >= 8) {
-        // Recién avisa cuando el DNI ya está completo (8 dígitos), para no
-        // mostrar el aviso mientras el inspector todavía lo está tipeando.
-        setDniNoEncontrado((s) => ({ ...s, [tipo]: true }));
+
+    dniTimers.current[tipo] = setTimeout(async () => {
+      try {
+        const match = await getCatalogoByExtra(tipo, dni);
+        // Si en los 350ms de espera el inspector ya escribió un nombre a
+        // mano, no lo pisa — misma regla que al principio de la función.
+        if (match && !mRef.current[nombreKey].trim()) {
+          onChange({ ...mRef.current, [dniKey]: dni, [nombreKey]: match.valor });
+        } else if (!match && dni.trim().length >= 8) {
+          // Recién avisa cuando el DNI ya está completo (8 dígitos), para no
+          // mostrar el aviso mientras el inspector todavía lo está tipeando.
+          setDniNoEncontrado((s) => ({ ...s, [tipo]: true }));
+        }
+      } catch (err) {
+        // Fallo inesperado de IndexedDB: no debe tumbar el formulario ni
+        // perder lo ya tipeado, solo queda sin autocompletar el nombre.
+        console.error("[Autocompletado DNI] no se pudo buscar en el catálogo", tipo, err);
       }
-    } catch (err) {
-      // Fallo inesperado de IndexedDB: no debe tumbar el formulario ni
-      // perder lo ya tipeado, solo queda sin autocompletar el nombre.
-      console.error("[Autocompletado DNI] no se pudo buscar en el catálogo", tipo, err);
-    }
+    }, DNI_DEBOUNCE_MS);
   }
 
   // Al elegir un empacador ya conocido, prellena el N° de bayas evaluadas con
@@ -148,18 +181,12 @@ export function MuestraHeaderForm({
             <Label>Hora de evaluación</Label>
             <Input type="time" value={m.horaEvaluacion ?? ""} onChange={(e) => set("horaEvaluacion", e.target.value)} />
           </div>
-          <div>
-            <Label>Planta de Empaque</Label>
-            <Select
-              value={m.plantaEmpaque ?? ""}
-              onChange={(e) => set("plantaEmpaque", e.target.value || null)}
-            >
-              <option value="">—</option>
-              {PLANTAS_EMPAQUE.map((p) => (
-                <option key={p} value={p}>{p}</option>
-              ))}
-            </Select>
-          </div>
+          <Autocomplete
+            label="Planta de Empaque"
+            tipo="planta_empaque"
+            value={m.plantaEmpaque}
+            onChange={(v) => set("plantaEmpaque", v)}
+          />
           <div>
             <Label>Fecha cosecha</Label>
             <Input type="date" value={m.fechaCosecha ?? ""} onChange={(e) => set("fechaCosecha", e.target.value)} />
