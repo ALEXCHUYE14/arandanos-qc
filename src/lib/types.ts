@@ -35,7 +35,13 @@ export interface Muestra {
   horaEvaluacion: string; // "HH:MM", opcional
   fechaCosecha: string | null; // ISO yyyy-mm-dd
   fechaEmpaque: string | null;
-  nPlanta: number | null;
+  /**
+   * Planta de Empaque. Antes era un número libre ("N° planta empaque"); el
+   * cliente usa etiquetas fijas en vez de un número — ver PLANTAS_EMPAQUE en
+   * MuestraHeaderForm.tsx (es un <Select> de opciones cerradas, no un
+   * catálogo de autocompletado, porque las 3 etiquetas son fijas).
+   */
+  plantaEmpaque: string | null;
   linea: string; // línea de empaque (metadato del reporte; no forma parte de las columnas del maestro)
   turno: Turno;
   productor: string;
@@ -57,7 +63,12 @@ export interface Muestra {
   empacador: string;
 
   // Evaluación a nivel muestra
-  pesoEstablecido: number | null; // peso objetivo del formato (g)
+  /**
+   * Peso bruto establecido. Texto libre (no número): el inspector necesita
+   * poder escribir el desglose por clamshell (ej. "9.5 / 10.2 / 11.0") y no
+   * solo un valor único, así que se dejó de forzar solo dígitos.
+   */
+  pesoEstablecido: string | null;
   medidaCorrectiva: string; // "SI" | "NO" | detalle
   observaciones: string;
 

@@ -22,7 +22,7 @@ export const HEADERS_BASE_DATOS: string[] = [
   "HORA DE EVALUACIÓN",
   "FECHA DE COSECHA",
   "FECHA DE EMPAQUE",
-  "N° PLANTA DE EMPAQUE",
+  "PLANTA DE EMPAQUE",
   "TURNO DE EMPAQUE",
   "PRODUCTOR",
   "CLIENTE",
@@ -91,7 +91,7 @@ export function buildRowBaseDatos(
   row[2] = s(m.horaEvaluacion);
   row[3] = fmtDate(m.fechaCosecha);
   row[4] = fmtDate(m.fechaEmpaque);
-  row[5] = s(m.nPlanta);
+  row[5] = s(m.plantaEmpaque);
   row[6] = s(m.turno);
   row[7] = s(m.productor);
   row[8] = s(m.cliente);

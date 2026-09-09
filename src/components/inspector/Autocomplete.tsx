@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Input, Label } from "@/components/ui/input";
 import { useCatalogo } from "@/hooks/useMuestras";
 import { cn } from "@/lib/utils";
@@ -76,42 +77,54 @@ export function Autocomplete({
   return (
     <div ref={boxRef} className="relative">
       <Label htmlFor={inputId}>{label}</Label>
-      <Input
-        id={inputId}
-        autoComplete="off"
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => {
-          const v = e.target.value;
-          onChange(v);
-          setOpen(true);
-          setHighlight(-1);
-          // Coincidencia exacta mientras se escribe (ej. autocompletado por
-          // código de barras/lector externo que escribe todo de una): mismo
-          // comportamiento que tenía el datalist nativo antes.
-          const match = opciones.find((o) => o.valor === v);
-          if (match && onPick) onPick(match.extra);
-        }}
-        onFocus={() => setOpen(true)}
-        onKeyDown={(e) => {
-          if (!open || filtradas.length === 0) return;
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setHighlight((h) => Math.min(h + 1, filtradas.length - 1));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHighlight((h) => Math.max(h - 1, 0));
-          } else if (e.key === "Enter") {
-            if (highlight >= 0 && filtradas[highlight]) {
-              e.preventDefault();
-              elegir(filtradas[highlight]);
-            }
-          } else if (e.key === "Escape") {
-            setOpen(false);
+      {/* Envoltorio propio (además del boxRef de afuera) solo para que la
+          flechita quede centrada sobre el campo de texto y no sobre el
+          Label — el dropdown de sugerencias de abajo se sigue posicionando
+          contra boxRef, así que esto no le cambia nada a esa parte. */}
+      <div className="relative">
+        <Input
+          id={inputId}
+          autoComplete="off"
+          className="pr-8"
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(v);
+            setOpen(true);
             setHighlight(-1);
-          }
-        }}
-      />
+            // Coincidencia exacta mientras se escribe (ej. autocompletado por
+            // código de barras/lector externo que escribe todo de una): mismo
+            // comportamiento que tenía el datalist nativo antes.
+            const match = opciones.find((o) => o.valor === v);
+            if (match && onPick) onPick(match.extra);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (!open || filtradas.length === 0) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setHighlight((h) => Math.min(h + 1, filtradas.length - 1));
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setHighlight((h) => Math.max(h - 1, 0));
+            } else if (e.key === "Enter") {
+              if (highlight >= 0 && filtradas[highlight]) {
+                e.preventDefault();
+                elegir(filtradas[highlight]);
+              }
+            } else if (e.key === "Escape") {
+              setOpen(false);
+              setHighlight(-1);
+            }
+          }}
+        />
+        {/* Flechita estilo filtro de Excel — mismo criterio que <Select>: solo
+            indica visualmente que el campo tiene opciones para elegir. Un
+            toque/clic ahí cae sobre el input de abajo (pointer-events-none) y
+            lo enfoca, lo que ya abre el dropdown por el onFocus de arriba. */}
+        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+      </div>
       {open && filtradas.length > 0 && (
         <ul className="absolute z-40 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-lg">
           {filtradas.map((o, i) => (

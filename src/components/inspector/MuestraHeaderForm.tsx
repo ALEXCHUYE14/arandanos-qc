@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Autocomplete } from "./Autocomplete";
@@ -25,6 +25,13 @@ const CAMPOS_OBLIGATORIOS: { key: keyof Muestra; label: string }[] = [
   { key: "empacador", label: "Empacador" },
 ];
 
+/**
+ * Etiquetas fijas de "Planta de Empaque" (antes era un número libre). Lista
+ * cerrada a pedido del cliente — por eso es un <Select>, no un Autocomplete
+ * de catálogo: no hay "plantas nuevas" que un inspector pueda tipear.
+ */
+const PLANTAS_EMPAQUE = ["Copia 1", "Copia 2", "MAERSK"];
+
 /** Formulario de cabecera del lote/muestra. */
 export function MuestraHeaderForm({
   m,
@@ -40,6 +47,13 @@ export function MuestraHeaderForm({
     [m]
   );
 
+  // "DNI no encontrado en el catálogo" — solo para mostrar un aviso claro al
+  // inspector (personal nuevo, o DNI mal tipeado); nunca bloquea nada.
+  const [dniNoEncontrado, setDniNoEncontrado] = useState<{ inspector: boolean; empacador: boolean }>({
+    inspector: false,
+    empacador: false,
+  });
+
   // Semana: se recalcula sola a partir de la fecha de empaque (la fecha que
   // más importa para el correlativo semanal del maestro). El inspector puede
   // seguir tocándola a mano después si hace falta un ajuste puntual.
@@ -48,15 +62,36 @@ export function MuestraHeaderForm({
     onChange({ ...m, fechaEmpaque: fecha, semana });
   }
 
-  // Autocompleta el nombre a partir del DNI (además de nombre → DNI, que ya
-  // hacía el Autocomplete). Si el DNI no está registrado (personal nuevo),
-  // no hace nada — el campo queda en blanco para completarlo después, sin
-  // bloquear el guardado de la muestra.
-  async function onDniChange(tipo: "inspector" | "empacador", dni: string, nombreKey: "inspector" | "empacador", dniKey: "dniInspector" | "dniEmpacador") {
+  // Autocompleta Apellidos y Nombre a partir del DNI (además de nombre →
+  // DNI, que ya hacía el Autocomplete), buscando en el catálogo local
+  // sembrado desde la hoja EMPACADORES / INSPECTORES DE CALIDAD del Excel de
+  // referencia (ver lib/listaMaestra.ts → seedListaMaestra en lib/db.ts).
+  // Si el DNI no está registrado (personal nuevo, o un DNI mal tipeado), NO
+  // rompe nada: se avisa con un mensaje y el campo queda en blanco para
+  // completarlo a mano, sin bloquear el guardado de la muestra.
+  async function onDniChange(
+    tipo: "inspector" | "empacador",
+    dni: string,
+    nombreKey: "inspector" | "empacador",
+    dniKey: "dniInspector" | "dniEmpacador"
+  ) {
     onChange({ ...m, [dniKey]: dni });
+    setDniNoEncontrado((s) => ({ ...s, [tipo]: false }));
     if (!dni.trim() || m[nombreKey].trim()) return; // no pisa un nombre ya cargado
-    const match = await getCatalogoByExtra(tipo, dni);
-    if (match) onChange({ ...m, [dniKey]: dni, [nombreKey]: match.valor });
+    try {
+      const match = await getCatalogoByExtra(tipo, dni);
+      if (match) {
+        onChange({ ...m, [dniKey]: dni, [nombreKey]: match.valor });
+      } else if (dni.trim().length >= 8) {
+        // Recién avisa cuando el DNI ya está completo (8 dígitos), para no
+        // mostrar el aviso mientras el inspector todavía lo está tipeando.
+        setDniNoEncontrado((s) => ({ ...s, [tipo]: true }));
+      }
+    } catch (err) {
+      // Fallo inesperado de IndexedDB: no debe tumbar el formulario ni
+      // perder lo ya tipeado, solo queda sin autocompletar el nombre.
+      console.error("[Autocompletado DNI] no se pudo buscar en el catálogo", tipo, err);
+    }
   }
 
   // Al elegir un empacador ya conocido, prellena el N° de bayas evaluadas con
@@ -114,8 +149,16 @@ export function MuestraHeaderForm({
             <Input type="time" value={m.horaEvaluacion ?? ""} onChange={(e) => set("horaEvaluacion", e.target.value)} />
           </div>
           <div>
-            <Label>N° planta empaque</Label>
-            <Input type="number" className="no-spin" value={m.nPlanta ?? ""} onChange={(e) => set("nPlanta", e.target.value === "" ? null : parseInt(e.target.value, 10))} />
+            <Label>Planta de Empaque</Label>
+            <Select
+              value={m.plantaEmpaque ?? ""}
+              onChange={(e) => set("plantaEmpaque", e.target.value || null)}
+            >
+              <option value="">—</option>
+              {PLANTAS_EMPAQUE.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </Select>
           </div>
           <div>
             <Label>Fecha cosecha</Label>
@@ -147,8 +190,13 @@ export function MuestraHeaderForm({
           <Autocomplete label="Tipo de empaque" tipo="tipo_empaque" value={m.tipoEmpaque ?? ""} onChange={(v) => set("tipoEmpaque", v)} />
           <Autocomplete label="Calibre *" tipo="calibre" value={m.calibre} onChange={(v) => set("calibre", v)} />
           <div>
-            <Label>Peso bruto establecido (g)</Label>
-            <Input type="number" className="no-spin" value={m.pesoEstablecido ?? ""} onChange={(e) => set("pesoEstablecido", e.target.value === "" ? null : parseFloat(e.target.value))} />
+            <Label>Peso bruto establecido</Label>
+            <Input
+              type="text"
+              placeholder="ej. 18.5g, o el desglose por clamshell"
+              value={m.pesoEstablecido ?? ""}
+              onChange={(e) => set("pesoEstablecido", e.target.value === "" ? null : e.target.value)}
+            />
           </div>
           <Autocomplete label="Embalaje caja" tipo="embalaje_caja" value={m.embalajeCaja} onChange={(v) => set("embalajeCaja", v)} />
           <Autocomplete label="Etiqueta clamshell" tipo="embalaje_clamshell" value={m.embalajeClamshell} onChange={(v) => set("embalajeClamshell", v)} />
@@ -173,6 +221,11 @@ export function MuestraHeaderForm({
               placeholder="Autocompleta el nombre si ya existe"
               onChange={(e) => onDniChange("inspector", e.target.value, "inspector", "dniInspector")}
             />
+            {dniNoEncontrado.inspector && (
+              <p className="mt-1 text-[11px] text-warning">
+                DNI no registrado — se puede completar el nombre a mano.
+              </p>
+            )}
           </div>
           <Autocomplete label="Supervisor de producción" tipo="supervisor" value={m.supervisor} onChange={(v) => set("supervisor", v)} />
           <Autocomplete label="Línea de empaque" tipo="linea" value={m.linea} onChange={(v) => set("linea", v)} />
@@ -191,6 +244,11 @@ export function MuestraHeaderForm({
               placeholder="Autocompleta el nombre si ya existe"
               onChange={(e) => onDniChange("empacador", e.target.value, "empacador", "dniEmpacador")}
             />
+            {dniNoEncontrado.empacador && (
+              <p className="mt-1 text-[11px] text-warning">
+                DNI no registrado — se puede completar el nombre a mano.
+              </p>
+            )}
           </div>
         </div>
         {(!m.inspector.trim() || !m.empacador.trim()) && (

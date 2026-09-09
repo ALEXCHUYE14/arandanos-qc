@@ -9,9 +9,9 @@ import type { AppUserProfile } from "./types";
 interface SessionState {
   inspectorNombre: string;
   inspectorDni: string;
-  nPlanta: number | null;
+  plantaEmpaque: string | null;
   setInspector: (nombre: string, dni: string) => void;
-  setPlanta: (n: number | null) => void;
+  setPlantaEmpaque: (p: string | null) => void;
 }
 
 export const useSession = create<SessionState>()(
@@ -19,9 +19,9 @@ export const useSession = create<SessionState>()(
     (set) => ({
       inspectorNombre: "",
       inspectorDni: "",
-      nPlanta: null,
+      plantaEmpaque: null,
       setInspector: (inspectorNombre, inspectorDni) => set({ inspectorNombre, inspectorDni }),
-      setPlanta: (nPlanta) => set({ nPlanta }),
+      setPlantaEmpaque: (plantaEmpaque) => set({ plantaEmpaque }),
     }),
     { name: "arandanos-session" }
   )

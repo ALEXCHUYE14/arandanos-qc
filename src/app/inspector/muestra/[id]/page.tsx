@@ -181,22 +181,40 @@ export default function CapturaPage() {
         </CardContent>
       </Card>
 
-      {/* Barra de acciones fija */}
+      {/* Barra de acciones fija.
+          Bug en móvil: los 3 botones de texto usaban "flex-1" pero un ítem
+          flex, por defecto, no se achica más allá del ancho de su propio
+          contenido (min-width:auto) — y el texto de los botones usa
+          whitespace-nowrap. En pantallas angostas eso hacía que la fila
+          completa se saliera del ancho de la pantalla, empujando el botón de
+          eliminar (icono, a la derecha) fuera del área visible/tocable — en
+          PC, con más ancho disponible, nunca se notaba. Se corrige con
+          min-w-0 en los contenedores flex-1 + truncate en las etiquetas, así
+          los 3 botones se achican correctamente en vez de desbordar, y el
+          botón de eliminar (shrink-0) siempre queda visible. Dispara la
+          MISMA función eliminarMuestra() de siempre — no se tocó la lógica,
+          solo el layout. */}
       <div className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 py-2.5">
-          <Button variant="outline" className="flex-1" onClick={guardarYSalir}>
-            <Save className="h-4 w-4" /> Guardar y salir
+          <Button variant="outline" className="min-w-0 flex-1" onClick={guardarYSalir}>
+            <Save className="h-4 w-4 shrink-0" /> <span className="truncate">Guardar y salir</span>
           </Button>
-          <Button variant="outline" className="flex-1" onClick={copiar}>
-            {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
-            {copied ? "¡Copiado!" : "Copiar fila Excel"}
+          <Button variant="outline" className="min-w-0 flex-1" onClick={copiar}>
+            {copied ? <Check className="h-4 w-4 shrink-0 text-success" /> : <Copy className="h-4 w-4 shrink-0" />}
+            <span className="truncate">{copied ? "¡Copiado!" : "Copiar fila Excel"}</span>
           </Button>
-          <Link href={`/reporte/${draft.id}`} className="flex-1">
-            <Button className="w-full">
-              <FileText className="h-4 w-4" /> Ver reporte
+          <Link href={`/reporte/${draft.id}`} className="min-w-0 flex-1">
+            <Button className="w-full min-w-0">
+              <FileText className="h-4 w-4 shrink-0" /> <span className="truncate">Ver reporte</span>
             </Button>
           </Link>
-          <Button variant="ghost" size="icon" className="text-danger" onClick={eliminarMuestra} aria-label="Eliminar muestra">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 text-danger"
+            onClick={eliminarMuestra}
+            aria-label="Eliminar muestra"
+          >
             <Trash2 className="h-5 w-5" />
           </Button>
         </div>

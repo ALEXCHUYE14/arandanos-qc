@@ -72,7 +72,7 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
           >
             <Field label="Fecha de cosecha" value={fmtDateUI(m.fechaCosecha)} />
             <Field label="Fecha de empaque" value={fmtDateUI(m.fechaEmpaque)} />
-            <Field label="Planta de Empaque" value={m.nPlanta ?? "—"} />
+            <Field label="Planta de Empaque" value={m.plantaEmpaque || "—"} />
             <Field label="Turno de empaque" value={m.turno} />
             <Field label="N° Semana" value={m.semana ?? "—"} />
             <Field label="Hora de evaluación" value={m.horaEvaluacion || "—"} />
@@ -102,7 +102,7 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
               <Field label="Formato" value={m.formato || "—"} />
               <Field label="Tipo de empaque" value={m.tipoEmpaque || "—"} />
               <Field label="Calibre" value={m.calibre || "—"} />
-              <Field label="Peso establecido" value={m.pesoEstablecido ? `${m.pesoEstablecido}g` : "—"} />
+              <Field label="Peso establecido" value={m.pesoEstablecido || "—"} />
               <Field label="Embalaje caja" value={m.embalajeCaja || "—"} />
             </div>
           </div>
@@ -138,26 +138,36 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
                   <h4 className="mb-2 text-[13px] font-bold">CLAMSHELL {cr.nClamshell}</h4>
 
                   {/* Resumen de "RESIDUOS DE COSECHA" (corola, resto floral verde,
-                      pedúnculo) contra el tope de tolerancia del destino — se
-                      muestra siempre, aunque esté en 0%, para que quede visible
-                      en el reporte cuánto suma esta clasificación. */}
-                  <div
-                    className={`mb-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[12px] ${
-                      cr.rollupCumple.residuos_cosecha
-                        ? "border-[#E2E8F0] bg-[#F8FAFC]"
-                        : "border-[#FCA5A5] bg-[#FEF2F2]"
-                    }`}
-                  >
-                    <span className="font-semibold">{ROLLUP_LABEL.residuos_cosecha}</span>
-                    <span
-                      className={`font-bold ${
-                        cr.rollupCumple.residuos_cosecha ? "text-[#16A34A]" : "text-[#DC2626]"
+                      pedúnculo) contra el tope de tolerancia del destino.
+                      Solo se muestra cuando el clamshell REALMENTE tiene algún
+                      conteo en esa clasificación (pct > 0) — igual que el resto
+                      de los defectos de abajo. Mostrarla siempre (incluso en
+                      0%) generaba confusión: parecía que el sistema "marcaba"
+                      Residuos de Cosecha en clamshells donde en realidad no
+                      había ningún defecto, o donde el defecto real era otro
+                      (ej. Inmadurez leve). El conteo por defecto sigue siendo
+                      100% independiente por clamshell (ver ClamshellEditor /
+                      calc.ts) — esto era solo un problema de cómo se mostraba
+                      en el reporte, no de los datos guardados. */}
+                  {(cr.rollupPct.residuos_cosecha || 0) > 0 && (
+                    <div
+                      className={`mb-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[12px] ${
+                        cr.rollupCumple.residuos_cosecha
+                          ? "border-[#E2E8F0] bg-[#F8FAFC]"
+                          : "border-[#FCA5A5] bg-[#FEF2F2]"
                       }`}
                     >
-                      {((cr.rollupPct.residuos_cosecha || 0) * 100).toFixed(2)}%{" "}
-                      <span className="font-normal text-[#94A3B8]">/ tope {(topeResiduos * 100).toFixed(0)}%</span>
-                    </span>
-                  </div>
+                      <span className="font-semibold">{ROLLUP_LABEL.residuos_cosecha}</span>
+                      <span
+                        className={`font-bold ${
+                          cr.rollupCumple.residuos_cosecha ? "text-[#16A34A]" : "text-[#DC2626]"
+                        }`}
+                      >
+                        {((cr.rollupPct.residuos_cosecha || 0) * 100).toFixed(2)}%{" "}
+                        <span className="font-normal text-[#94A3B8]">/ tope {(topeResiduos * 100).toFixed(0)}%</span>
+                      </span>
+                    </div>
+                  )}
 
                   {defectsShown.length === 0 ? (
                     <p className="text-[13px] text-[#16A34A]">Sin defectos registrados</p>

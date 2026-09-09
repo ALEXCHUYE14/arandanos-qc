@@ -53,7 +53,7 @@ create table if not exists public.muestras (
   hora_evaluacion    text default '',
   fecha_cosecha      date,
   fecha_empaque      date,
-  n_planta           integer,
+  planta_empaque     text, -- antes n_planta (integer); ahora etiqueta fija ("Copia 1"/"Copia 2"/"MAERSK")
   linea              text default '',
   turno              text default 'DÍA',
   productor          text default '',
@@ -71,7 +71,7 @@ create table if not exists public.muestras (
   supervisor         text default '',
   dni_empacador      text default '',
   empacador          text default '',
-  peso_establecido   numeric,
+  peso_establecido   text, -- antes numeric; texto libre para poder anotar el desglose por clamshell
   medida_correctiva  text default 'NO',
   observaciones      text default '',
   created_at         timestamptz not null default now(),
@@ -244,7 +244,7 @@ begin
   end if;
 
   insert into public.muestras (
-    id, codigo, id_maestro, semana, hora_evaluacion, fecha_cosecha, fecha_empaque, n_planta, linea, turno,
+    id, codigo, id_maestro, semana, hora_evaluacion, fecha_cosecha, fecha_empaque, planta_empaque, linea, turno,
     productor, cliente, destino, variedad, formato, tipo_empaque, calibre, embalaje_caja, embalaje_clamshell,
     intervalo_cosecha, dni_inspector, inspector, supervisor, dni_empacador,
     empacador, peso_establecido, medida_correctiva, observaciones, created_at, created_by
@@ -254,14 +254,14 @@ begin
     v_codigo, v_id_maestro, (p_muestra->>'semana')::int,
     p_muestra->>'hora_evaluacion',
     (p_muestra->>'fecha_cosecha')::date, (p_muestra->>'fecha_empaque')::date,
-    (p_muestra->>'n_planta')::int, p_muestra->>'linea', p_muestra->>'turno',
+    p_muestra->>'planta_empaque', p_muestra->>'linea', p_muestra->>'turno',
     p_muestra->>'productor', p_muestra->>'cliente', p_muestra->>'destino',
     p_muestra->>'variedad', p_muestra->>'formato', p_muestra->>'tipo_empaque',
     p_muestra->>'calibre', p_muestra->>'embalaje_caja',
     p_muestra->>'embalaje_clamshell', p_muestra->>'intervalo_cosecha',
     p_muestra->>'dni_inspector', p_muestra->>'inspector', p_muestra->>'supervisor',
     p_muestra->>'dni_empacador', p_muestra->>'empacador',
-    (p_muestra->>'peso_establecido')::numeric, p_muestra->>'medida_correctiva',
+    p_muestra->>'peso_establecido', p_muestra->>'medida_correctiva',
     p_muestra->>'observaciones', coalesce((p_muestra->>'created_at')::timestamptz, now()),
     p_muestra->>'created_by'
   )
@@ -271,7 +271,7 @@ begin
     semana = excluded.semana,
     hora_evaluacion = excluded.hora_evaluacion,
     fecha_cosecha = excluded.fecha_cosecha, fecha_empaque = excluded.fecha_empaque,
-    n_planta = excluded.n_planta, linea = excluded.linea, turno = excluded.turno,
+    planta_empaque = excluded.planta_empaque, linea = excluded.linea, turno = excluded.turno,
     productor = excluded.productor, cliente = excluded.cliente, destino = excluded.destino,
     variedad = excluded.variedad, formato = excluded.formato, tipo_empaque = excluded.tipo_empaque,
     calibre = excluded.calibre, embalaje_caja = excluded.embalaje_caja,

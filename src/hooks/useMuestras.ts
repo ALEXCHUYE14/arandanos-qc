@@ -62,7 +62,7 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
     horaEvaluacion: nowHHMM(),
     fechaCosecha: todayISO(),
     fechaEmpaque: todayISO(),
-    nPlanta: session.nPlanta,
+    plantaEmpaque: session.plantaEmpaque,
     linea: "",
     turno: "DÍA",
     productor: "",
