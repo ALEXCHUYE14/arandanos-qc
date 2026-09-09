@@ -2,15 +2,25 @@
 
 import { forwardRef } from "react";
 import { computeMuestra, resolveDestinoTier } from "@/lib/calc";
-import { DEFECTS, ROLLUP_LABEL, TOLERANCE_BY_KEY, toleranceMax } from "@/lib/defects";
+import { DEFECTS, ROLLUP_ORDER, ROLLUP_LABEL, TOLERANCE_BY_KEY, toleranceMax } from "@/lib/defects";
 import { fmtDateUI } from "@/lib/utils";
+import type { ClamshellResult } from "@/lib/types";
 import type { Muestra } from "@/lib/types";
 
 const DEFECT_LABEL = Object.fromEntries(DEFECTS.map((d) => [d.key, d.label]));
 const DEFECT_CAT = Object.fromEntries(DEFECTS.map((d) => [d.key, d.category]));
-/** Clasificación (rollup) de cada defecto — ej. "RESIDUOS DE COSECHA",
- *  "OTROS DEFECTOS LEVES" — para mostrarla junto al defecto en el reporte. */
-const DEFECT_CLASIFICACION = Object.fromEntries(DEFECTS.map((d) => [d.key, ROLLUP_LABEL[d.rollup]]));
+
+/** Agrupa los defectos de un clamshell por Clasificación (rollup), en el
+ *  mismo orden oficial que usa ClamshellEditor (ROLLUP_ORDER) — solo las
+ *  clasificaciones que tienen al menos un defecto presente (pct > 0). */
+function agruparPorClasificacion(cr: ClamshellResult) {
+  return ROLLUP_ORDER.map((rollup) => {
+    const defectos = DEFECTS.filter((d) => d.rollup === rollup && (cr.defectPct[d.key] || 0) > 0).sort(
+      (a, b) => (cr.defectPct[b.key] || 0) - (cr.defectPct[a.key] || 0)
+    );
+    return { rollup, defectos, pct: cr.rollupPct[rollup] || 0, cumple: cr.rollupCumple[rollup] };
+  }).filter((g) => g.defectos.length > 0);
+}
 
 type ReportViewProps = {
   muestra: Muestra;
@@ -36,10 +46,10 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
     const r = computeMuestra(m);
     const cumple = r.cumple;
     const isExport = variant === "export";
-    // Tope de tolerancia de "RESIDUOS DE COSECHA" según destino/embalaje de
-    // ESTA muestra (mismo criterio que usa el cálculo, ver lib/defects.ts).
+    // Tier de tolerancia según destino/embalaje de ESTA muestra (mismo
+    // criterio que usa el cálculo, ver lib/defects.ts) — se usa para el tope
+    // de cada Clasificación mostrada abajo.
     const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
-    const topeResiduos = toleranceMax(TOLERANCE_BY_KEY.residuos_cosecha, tier);
 
     return (
       <div
@@ -126,10 +136,7 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
         {/* Clamshells */}
         <div className="space-y-3">
           {r.clamshells.map((cr) => {
-            const cs = m.clamshells.find((c) => c.nClamshell === cr.nClamshell)!;
-            const defectsShown = Object.entries(cr.defectPct)
-              .filter(([, pct]) => pct > 0)
-              .sort((a, b) => b[1] - a[1]);
+            const grupos = agruparPorClasificacion(cr);
             return (
               <div
                 key={cr.nClamshell}
@@ -140,68 +147,56 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
                 <div>
                   <h4 className="mb-2 text-[13px] font-bold">CLAMSHELL {cr.nClamshell}</h4>
 
-                  {/* Resumen de "RESIDUOS DE COSECHA" (corola, resto floral verde,
-                      pedúnculo) contra el tope de tolerancia del destino.
-                      Solo se muestra cuando el clamshell REALMENTE tiene algún
-                      conteo en esa clasificación (pct > 0) — igual que el resto
-                      de los defectos de abajo. Mostrarla siempre (incluso en
-                      0%) generaba confusión: parecía que el sistema "marcaba"
-                      Residuos de Cosecha en clamshells donde en realidad no
-                      había ningún defecto, o donde el defecto real era otro
-                      (ej. Inmadurez leve). El conteo por defecto sigue siendo
-                      100% independiente por clamshell (ver ClamshellEditor /
-                      calc.ts) — esto era solo un problema de cómo se mostraba
-                      en el reporte, no de los datos guardados. */}
-                  {(cr.rollupPct.residuos_cosecha || 0) > 0 && (
-                    <div
-                      className={`mb-2 flex items-center justify-between gap-2 rounded-md border px-2 py-1 text-[12px] ${
-                        cr.rollupCumple.residuos_cosecha
-                          ? "border-[#E2E8F0] bg-[#F8FAFC]"
-                          : "border-[#FCA5A5] bg-[#FEF2F2]"
-                      }`}
-                    >
-                      <span className="font-semibold">{ROLLUP_LABEL.residuos_cosecha}</span>
-                      <span
-                        className={`font-bold ${
-                          cr.rollupCumple.residuos_cosecha ? "text-[#16A34A]" : "text-[#DC2626]"
-                        }`}
-                      >
-                        {((cr.rollupPct.residuos_cosecha || 0) * 100).toFixed(2)}%{" "}
-                        <span className="font-normal text-[#94A3B8]">/ tope {(topeResiduos * 100).toFixed(0)}%</span>
-                      </span>
-                    </div>
-                  )}
-
-                  {defectsShown.length === 0 ? (
+                  {grupos.length === 0 ? (
                     <p className="text-[13px] text-[#16A34A]">Sin defectos registrados</p>
                   ) : (
-                    <div className="space-y-1">
-                      {defectsShown.map(([key, pct]) => (
-                        <div key={key} className="flex items-center justify-between gap-3 text-[13px]">
-                          <span>
-                            <span
-                              className={`font-semibold ${
-                                DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
+                    <div className="space-y-2">
+                      {grupos.map((g) => {
+                        const tol = TOLERANCE_BY_KEY[g.rollup];
+                        const max = tol ? toleranceMax(tol, tier) : 0;
+                        return (
+                          <div key={g.rollup} className="overflow-hidden rounded-md border border-[#E2E8F0]">
+                            {/* Cabecera de la Clasificación: nombre + % acumulado / tope
+                                de tolerancia del destino — misma estructura que las
+                                demás tarjetas del reporte (título arriba, métrica al
+                                lado), no una nota entre paréntesis. */}
+                            <div
+                              className={`flex items-center justify-between gap-2 px-2.5 py-1.5 text-[12px] ${
+                                g.cumple ? "bg-[#F8FAFC]" : "bg-[#FEF2F2]"
                               }`}
                             >
-                              {DEFECT_LABEL[key]}
-                            </span>
-                            {/* Clasificación (rollup) del defecto — ej. "Residuos de
-                                Cosecha", "Otros Defectos Leves" — junto al defecto,
-                                sin alterar el alto/alineación de la fila. */}
-                            <span className="ml-1 text-[10px] font-normal text-[#94A3B8]">
-                              ({DEFECT_CLASIFICACION[key]})
-                            </span>
-                          </span>
-                          <span
-                            className={`shrink-0 font-bold ${
-                              DEFECT_CAT[key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
-                            }`}
-                          >
-                            {(pct * 100).toFixed(2)}%
-                          </span>
-                        </div>
-                      ))}
+                              <span className="font-bold uppercase">{ROLLUP_LABEL[g.rollup]}</span>
+                              <span className={`font-bold ${g.cumple ? "text-[#16A34A]" : "text-[#DC2626]"}`}>
+                                {(g.pct * 100).toFixed(2)}%{" "}
+                                <span className="font-normal text-[#94A3B8]">/ tope {(max * 100).toFixed(0)}%</span>
+                              </span>
+                            </div>
+                            {/* Desglose: los defectos específicos de esta Clasificación,
+                                cada uno con su propio % — debajo de la cabecera, no
+                                inline ni entre paréntesis. */}
+                            <div className="space-y-1 px-2.5 py-1.5">
+                              {g.defectos.map((d) => (
+                                <div key={d.key} className="flex items-center justify-between gap-3 text-[13px]">
+                                  <span
+                                    className={
+                                      DEFECT_CAT[d.key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
+                                    }
+                                  >
+                                    {DEFECT_LABEL[d.key]}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 font-bold ${
+                                      DEFECT_CAT[d.key] === "descarte" ? "text-[#DC2626]" : "text-[#16A34A]"
+                                    }`}
+                                  >
+                                    {((cr.defectPct[d.key] || 0) * 100).toFixed(2)}%
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

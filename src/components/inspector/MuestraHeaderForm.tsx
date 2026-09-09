@@ -81,17 +81,27 @@ export function MuestraHeaderForm({
     onChange({ ...m, fechaEmpaque: fecha, semana });
   }
 
-  // Autocompleta Apellidos y Nombre a partir del DNI (además de nombre →
-  // DNI, que ya hacía el Autocomplete), buscando con debounce en el catálogo
-  // local sembrado desde la hoja EMPACADORES / INSPECTORES DE CALIDAD del
-  // Excel de referencia (ver lib/listaMaestra.ts → seedListaMaestra en
-  // lib/db.ts) — no hay ni necesita haber una API externa: este catálogo YA
-  // ES la fuente de datos de personal, y buscarlo local (no por red) es lo
-  // que permite que el autocompletado funcione sin señal en la línea de
-  // empaque, que es un requisito de fondo de toda la app.
-  // Si el DNI no está registrado (personal nuevo, un DNI mal tipeado, o
-  // falla la búsqueda), NO rompe nada: se avisa con un mensaje y el campo
-  // queda en blanco para completarlo a mano, sin bloquear el guardado.
+  // Autocompleta Apellidos y Nombre a partir del DNI, buscando con debounce
+  // en el catálogo local sembrado desde la hoja EMPACADORES / INSPECTORES DE
+  // CALIDAD del Excel de referencia (ver lib/listaMaestra.ts →
+  // seedListaMaestra en lib/db.ts) — no hay ni necesita haber una API
+  // externa: este catálogo YA ES la fuente de datos de personal, y buscarlo
+  // local (no por red) es lo que permite que el autocompletado funcione sin
+  // señal en la línea de empaque, que es un requisito de fondo de toda la app.
+  //
+  // Antes esto se saltaba si el campo de nombre ya tenía algo cargado ("no
+  // pisa un nombre ya cargado") — funcionaba bien para Empacador (arranca
+  // vacío en una muestra nueva) pero rompía el autocompletado de Inspector
+  // de Calidad: ese campo arranca PRE-cargado con el nombre del inspector
+  // autenticado que creó la muestra (ver createMuestra en useMuestras.ts),
+  // así que la guarda bloqueaba la búsqueda desde el primer DNI tipeado, sin
+  // importar de quién fuera. Ahora, si el DNI tipeado coincide con un
+  // registro del catálogo, el nombre SIEMPRE se sincroniza con ese
+  // registro — es una acción explícita del inspector (tipear un DNI válido),
+  // y así funciona igual para cualquier inspector, no solo en una muestra
+  // recién creada. Si el DNI no está registrado (personal nuevo, un DNI mal
+  // tipeado, o falla la búsqueda), NO rompe nada: se avisa con un mensaje y
+  // el nombre existente se deja tal cual, sin bloquear el guardado.
   function onDniChange(
     tipo: "inspector" | "empacador",
     dni: string,
@@ -105,16 +115,14 @@ export function MuestraHeaderForm({
 
     const timerPrevio = dniTimers.current[tipo];
     if (timerPrevio) clearTimeout(timerPrevio);
-    if (!dni.trim() || m[nombreKey].trim()) return; // no pisa un nombre ya cargado
+    if (!dni.trim()) return;
 
     dniTimers.current[tipo] = setTimeout(async () => {
       try {
         const match = await getCatalogoByExtra(tipo, dni);
-        // Si en los 350ms de espera el inspector ya escribió un nombre a
-        // mano, no lo pisa — misma regla que al principio de la función.
-        if (match && !mRef.current[nombreKey].trim()) {
+        if (match) {
           onChange({ ...mRef.current, [dniKey]: dni, [nombreKey]: match.valor });
-        } else if (!match && dni.trim().length >= 8) {
+        } else if (dni.trim().length >= 8) {
           // Recién avisa cuando el DNI ya está completo (8 dígitos), para no
           // mostrar el aviso mientras el inspector todavía lo está tipeando.
           setDniNoEncontrado((s) => ({ ...s, [tipo]: true }));
