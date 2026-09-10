@@ -17,7 +17,12 @@ import { resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
 export default function InspectorListPage() {
   const router = useRouter();
   const muestras = useMuestras() ?? [];
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  // Set (no un solo id): con más de una muestra en conflicto a la vez, un
+  // solo `resolvingId` compartido hacía que resolver la B (mientras la A
+  // todavía estaba en curso) reactivara por error el botón de A, permitiendo
+  // un segundo clic sobre una resolución todavía en vuelo. Con un Set, cada
+  // fila solo se deshabilita mientras SU PROPIA resolución está en curso.
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [limpiando, setLimpiando] = useState(false);
   const [errorLimpiar, setErrorLimpiar] = useState<string | null>(null);
@@ -67,25 +72,34 @@ export default function InspectorListPage() {
     }
   }
 
+  function marcarResolviendo(id: string, resolviendo: boolean) {
+    setResolvingIds((prev) => {
+      const next = new Set(prev);
+      if (resolviendo) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   async function keepLocal(id: string) {
-    setResolvingId(id);
+    marcarResolviendo(id, true);
     try {
       await resolveConflictKeepLocal(id);
     } catch (e) {
       console.error("[conflicto] no se pudo conservar la versión local", e);
     } finally {
-      setResolvingId(null);
+      marcarResolviendo(id, false);
     }
   }
 
   async function pickServerVersion(id: string) {
-    setResolvingId(id);
+    marcarResolviendo(id, true);
     try {
       await resolveConflictUseServer(id);
     } catch (e) {
       console.error("[conflicto] no se pudo traer la versión del servidor", e);
     } finally {
-      setResolvingId(null);
+      marcarResolviendo(id, false);
     }
   }
 
@@ -174,7 +188,7 @@ export default function InspectorListPage() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={resolvingId === m.id}
+                        disabled={resolvingIds.has(m.id)}
                         onClick={() => keepLocal(m.id)}
                       >
                         Conservar la mía
@@ -182,7 +196,7 @@ export default function InspectorListPage() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        disabled={resolvingId === m.id}
+                        disabled={resolvingIds.has(m.id)}
                         onClick={() => pickServerVersion(m.id)}
                       >
                         Usar la del servidor

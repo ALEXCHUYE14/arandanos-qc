@@ -15,7 +15,7 @@
  * cae al mismo caché local que usa el resto de la app.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { rowToMuestra } from "@/lib/sync";
@@ -36,12 +36,22 @@ export function useMuestrasCloud(): MuestrasCloudState {
   const [loading, setLoading] = useState(isSupabaseConfigured);
   const [error, setError] = useState<string | null>(null);
 
+  // Solo la PRIMERA carga debe prender el spinner — las siguientes (Realtime
+  // en cada alta/edición de cualquier inspector) refrescan en silencio. Un
+  // ref (no el estado `cloud`) para saberlo: el efecto de abajo corre una
+  // sola vez ([] de deps) y load() se re-crea en cada llamada del Realtime,
+  // así que un `cloud === null` leído del closure quedaba SIEMPRE en su
+  // valor inicial (null) para ese cierre — nunca "veía" que ya se había
+  // cargado — y volvía a prender el loading en cada evento en vivo, aunque
+  // el dashboard ya tuviera datos en pantalla. El ref sí se actualiza.
+  const primeraCargaRef = useRef(true);
+
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return;
     let active = true;
 
     async function load() {
-      setLoading((prev) => (cloud === null ? true : prev));
+      if (primeraCargaRef.current) setLoading(true);
       try {
         const [{ data: muestras, error: e1 }, { data: clamshells, error: e2 }] = await Promise.all([
           supabase!.from("muestras").select("*").order("updated_at", { ascending: false }),
@@ -67,6 +77,7 @@ export function useMuestrasCloud(): MuestrasCloudState {
         if (active) setError("No se pudo leer del servidor — mostrando el último dato disponible.");
       } finally {
         if (active) setLoading(false);
+        primeraCargaRef.current = false;
       }
     }
 

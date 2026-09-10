@@ -37,29 +37,44 @@ export default function DashboardPage() {
   const [fEstado, setFEstado] = useState("");
   const [copied, setCopied] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  // Set (no un solo id): puede haber más de una muestra en conflicto a la
+  // vez, y antes un solo `resolvingId` compartido hacía que resolver la
+  // fila B (mientras la fila A todavía estaba en curso) reactivara por
+  // error el botón de A, permitiendo un segundo clic sobre esa resolución
+  // todavía en vuelo. Con un Set, cada fila solo se deshabilita mientras SU
+  // PROPIA resolución está en curso, sin importar qué pase en las demás.
+  const [resolvingIds, setResolvingIds] = useState<Set<string>>(new Set());
 
   const conflictos = useMemo(() => all.filter((m) => m.sync === "conflict").length, [all]);
 
+  function marcarResolviendo(id: string, resolviendo: boolean) {
+    setResolvingIds((prev) => {
+      const next = new Set(prev);
+      if (resolviendo) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
   async function keepLocal(id: string) {
-    setResolvingId(id);
+    marcarResolviendo(id, true);
     try {
       await resolveConflictKeepLocal(id);
     } catch (e) {
       console.error("[conflicto] no se pudo conservar la versión local", e);
     } finally {
-      setResolvingId(null);
+      marcarResolviendo(id, false);
     }
   }
 
   async function pickServerVersion(id: string) {
-    setResolvingId(id);
+    marcarResolviendo(id, true);
     try {
       await resolveConflictUseServer(id);
     } catch (e) {
       console.error("[conflicto] no se pudo traer la versión del servidor", e);
     } finally {
-      setResolvingId(null);
+      marcarResolviendo(id, false);
     }
   }
 
@@ -288,7 +303,7 @@ export default function DashboardPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={resolvingId === m.id}
+                              disabled={resolvingIds.has(m.id)}
                               onClick={() => keepLocal(m.id)}
                               title="Conservar la versión de este dispositivo"
                             >
@@ -297,7 +312,7 @@ export default function DashboardPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              disabled={resolvingId === m.id}
+                              disabled={resolvingIds.has(m.id)}
                               onClick={() => pickServerVersion(m.id)}
                               title="Descartar mis cambios y traer la versión del servidor"
                             >
