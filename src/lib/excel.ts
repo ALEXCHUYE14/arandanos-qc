@@ -59,11 +59,12 @@ export function downloadXlsx(muestras: Muestra[], filename = "Base_de_Datos_Insp
 
   // ── Hoja "Defectos" (tolerancias por destino) ──────────────────────────
   const tolAoa: (string | number | null)[][] = [
-    ["CLASIFICACIÓN", "CHINA", "EUROPA/USA", "USA SWEETEST BATCH"],
-    ...TOLERANCES.map((t) => [t.label, t.china, t.europa_usa, t.usa_sweetest_batch]),
+    ["CLASIFICACIÓN", "CHINA", "EUROPA/USA", "USA SWEETEST BATCH", "CHINA + OZBLUE"],
+    ...TOLERANCES.map((t) => [t.label, t.china, t.europa_usa, t.usa_sweetest_batch, t.chinaOzblue ?? "—"]),
     [],
     ["Nota", "NOTA = 15 equivale a CUMPLE en ESTÁNDAR /CLAMSHELL"],
     ["Nota", "USA SWEETEST BATCH aplica cuando el destino es USA y el embalaje caja contiene \"SWEETEST BATCH\"; si no, USA usa la columna EUROPA/USA."],
+    ["Nota", "CHINA + OZBLUE aplica solo a TAMAÑO cuando el destino es CHINA y el cliente es OZBLUE (más laxo que el tope normal de China); las demás clasificaciones (\"—\") siguen usando la columna CHINA para cualquier cliente."],
   ];
   const wsTol = XLSX.utils.aoa_to_sheet(tolAoa);
   XLSX.utils.book_append_sheet(wb, wsTol, "Defectos");
