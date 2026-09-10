@@ -13,10 +13,16 @@ import { computeMuestra } from "@/lib/calc";
 import { fmtDateUI, todayISO } from "@/lib/utils";
 import { downloadXlsx } from "@/lib/excel";
 import { resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
+import { useSession } from "@/lib/store";
 
 export default function InspectorListPage() {
   const router = useRouter();
   const muestras = useMuestras() ?? [];
+  // Grupo de especificaciones activo (ver lib/store.ts) — se actualiza solo
+  // con cada muestra guardada, para no repetir Cliente/Destino/Variedad/etc.
+  // en cada empacador consecutivo.
+  const grupo = useSession((s) => s.grupoEspecificaciones);
+  const limpiarGrupo = useSession((s) => s.setGrupoEspecificaciones);
   // Set (no un solo id): con más de una muestra en conflicto a la vez, un
   // solo `resolvingId` compartido hacía que resolver la B (mientras la A
   // todavía estaba en curso) reactivara por error el botón de A, permitiendo
@@ -136,6 +142,26 @@ export default function InspectorListPage() {
           </Button>
         </div>
       </div>
+
+      {/* Grupo de especificaciones activo: Cliente/Destino/Variedad/etc. que
+          va a heredar automáticamente la PRÓXIMA muestra nueva — así no hace
+          falta repetirlos para cada empacador consecutivo (Pepito, Juanito,
+          Lupe...). "Cambiar especificaciones" lo vacía: la siguiente muestra
+          nueva arranca en blanco, y en cuanto se guarde con datos nuevos,
+          ESOS pasan a ser el grupo activo (ver updateMuestra en
+          hooks/useMuestras.ts) — no hace falta "guardar" el grupo a mano. */}
+      {grupo && (grupo.cliente || grupo.destino || grupo.variedad || grupo.formato) && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand/20 bg-brand-soft px-3 py-2 text-xs">
+          <span className="text-ink">
+            <strong>Especificaciones activas:</strong> {[grupo.cliente, grupo.destino, grupo.variedad, grupo.formato, grupo.calibre]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+          </span>
+          <Button variant="ghost" size="sm" onClick={() => limpiarGrupo(null)}>
+            Cambiar especificaciones
+          </Button>
+        </div>
+      )}
 
       {muestras.length === 0 ? (
         <Card>

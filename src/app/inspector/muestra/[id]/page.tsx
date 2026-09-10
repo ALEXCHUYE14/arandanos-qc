@@ -12,6 +12,7 @@ import { ClamshellEditor } from "@/components/inspector/ClamshellEditor";
 import { useMuestra, updateMuestra, removeMuestra } from "@/hooks/useMuestras";
 import { computeMuestra, emptyClamshell } from "@/lib/calc";
 import { copyMuestraToClipboard } from "@/lib/excel";
+import { useAuth } from "@/lib/store";
 
 // Chequeo liviano (sin importar lib/supabase, que arrastra todo el SDK de
 // Supabase al bundle de esta página solo para leer un booleano).
@@ -25,6 +26,7 @@ export default function CapturaPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const stored = useMuestra(id);
+  const auth = useAuth();
 
   const [draft, setDraft] = useState<Muestra | null>(null);
   const [tab, setTab] = useState<"datos" | number>("datos"); // number = índice de clamshell
@@ -46,6 +48,19 @@ export default function CapturaPage() {
   if (!draft) {
     return (
       <main className="px-4 py-10 text-center text-sm text-muted">Cargando muestra…</main>
+    );
+  }
+
+  // Aislamiento por usuario (ver useMuestras() en hooks/useMuestras.ts, que
+  // ya filtra "Mis muestras" por createdBy): esto cierra el caso de entrar
+  // por URL directa a una muestra que no es de este inspector — jefatura
+  // igual puede abrir cualquiera (no navega normalmente por acá, pero no
+  // hay motivo para bloquearla si lo hace).
+  if (auth.userId && draft.createdBy !== auth.userId && auth.profile?.rol !== "jefatura") {
+    return (
+      <main className="px-4 py-10 text-center text-sm text-muted">
+        Esta muestra no te pertenece o no existe.
+      </main>
     );
   }
 
@@ -119,8 +134,15 @@ export default function CapturaPage() {
               <span className="ml-1 align-middle text-[10px] font-normal text-muted">(provisorio)</span>
             )}
           </span>
+          {/* "Nota 15" (verde) / "Nota 5" (rojo) — antes decía "CUMPLE"/
+              "NO CUMPLE". Es la MISMA nota de siempre (cs.nota por
+              Clamshell, 5 o 15 — automática o puesta a mano por el
+              inspector, ver calc.ts); acá solo cambió la etiqueta que se
+              muestra, no cómo se calcula. res.cumple ya era exactamente
+              "todos los Clamshells con nota 15" (ver computeMuestra en
+              lib/calc.ts), así que el criterio verde/rojo es el mismo. */}
           <Badge variant={res.cumple ? "success" : "danger"}>
-            {res.cumple ? "CUMPLE" : "NO CUMPLE"}
+            {res.cumple ? "Nota 15" : "Nota 5"}
           </Badge>
         </div>
       </div>

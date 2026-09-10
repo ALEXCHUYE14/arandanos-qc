@@ -70,12 +70,15 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
             <div className="text-[15px] font-bold">
               MUESTRA: <span className="font-mono">{m.codigo}</span>
             </div>
+            {/* "Nota 15"/"Nota 5" — antes decía "CUMPLE"/"NO CUMPLE". Mismo
+                dato de siempre (r.cumple = todos los Clamshells con nota 15,
+                ver computeMuestra en lib/calc.ts), solo cambió la etiqueta. */}
             <div
               className={`flex items-center gap-1 text-[15px] font-extrabold ${
                 cumple ? "text-[#16A34A]" : "text-[#DC2626]"
               }`}
             >
-              {cumple ? "✓ CUMPLE" : "✗ NO CUMPLE"}
+              {cumple ? "✓ Nota 15" : "✗ Nota 5"}
             </div>
           </div>
           <div
@@ -200,15 +203,15 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
                     </div>
                   )}
                 </div>
+                {/* Se retiran acá "Nota" y "Estándar" (Cumple/No Cumple)
+                    automáticos por Clamshell — ese veredicto ahora se
+                    muestra una sola vez, arriba, como "Nota 15"/"Nota 5"
+                    (ver cabecera de la muestra más arriba). El conteo de
+                    bayas evaluadas se mantiene. El cálculo de defectos y
+                    tolerancias de este Clamshell NO cambia — solo se dejó
+                    de repetir el indicador acá abajo. */}
                 <div className="space-y-1.5 text-[13px]">
                   <Field label="N° bayas evaluadas" value={cr.nBayasEvaluadas} />
-                  <Field label="Nota" value={cr.nota} />
-                  <Field
-                    label="Estándar"
-                    value={
-                      <span className={cr.cumple ? "text-[#16A34A]" : "text-[#DC2626]"}>{cr.estandar}</span>
-                    }
-                  />
                 </div>
               </div>
             );
