@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle } from "lucide-react";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Autocomplete } from "./Autocomplete";
-import { getCatalogoByExtra, getBayasEvaluadasDefault } from "@/lib/db";
+import { getCatalogoByExtra, getBayasEvaluadasDefault, recordarCatalogoValor } from "@/lib/db";
 import { isoWeek } from "@/lib/utils";
 import type { Muestra } from "@/lib/types";
 
@@ -247,6 +247,7 @@ export function MuestraHeaderForm({
             value={m.inspector}
             onChange={(v) => set("inspector", v)}
             onPick={(dni) => dni && set("dniInspector", dni)}
+            extra={m.dniInspector}
           />
           <div>
             <Label>DNI inspector</Label>
@@ -255,6 +256,17 @@ export function MuestraHeaderForm({
               value={m.dniInspector}
               placeholder="Autocompleta el nombre si ya existe"
               onChange={(e) => onDniChange("inspector", e.target.value, "inspector", "dniInspector")}
+              // Si el DNI se completa DESPUÉS del nombre (orden inverso al
+              // habitual), este blur vuelve a guardar el par nombre+DNI con
+              // el DNI ya puesto — el blur del campo Nombre (Autocomplete)
+              // pudo haber disparado antes, con el DNI todavía vacío.
+              onBlur={() => {
+                if (m.inspector.trim() && m.dniInspector.trim()) {
+                  recordarCatalogoValor("inspector", m.inspector, m.dniInspector).catch((err) =>
+                    console.error("[DNI inspector] no se pudo recordar", err)
+                  );
+                }
+              }}
             />
             {dniNoEncontrado.inspector && (
               <p className="mt-1 text-[11px] text-warning">
@@ -270,6 +282,7 @@ export function MuestraHeaderForm({
             value={m.empacador}
             onChange={onEmpacadorChange}
             onPick={(dni) => dni && set("dniEmpacador", dni)}
+            extra={m.dniEmpacador}
           />
           <div>
             <Label>DNI empacador</Label>
@@ -278,6 +291,15 @@ export function MuestraHeaderForm({
               value={m.dniEmpacador}
               placeholder="Autocompleta el nombre si ya existe"
               onChange={(e) => onDniChange("empacador", e.target.value, "empacador", "dniEmpacador")}
+              // Mismo motivo que en DNI inspector: cubre el caso de cargar el
+              // DNI después del nombre.
+              onBlur={() => {
+                if (m.empacador.trim() && m.dniEmpacador.trim()) {
+                  recordarCatalogoValor("empacador", m.empacador, m.dniEmpacador).catch((err) =>
+                    console.error("[DNI empacador] no se pudo recordar", err)
+                  );
+                }
+              }}
             />
             {dniNoEncontrado.empacador && (
               <p className="mt-1 text-[11px] text-warning">

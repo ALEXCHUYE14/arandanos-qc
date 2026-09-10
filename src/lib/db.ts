@@ -75,7 +75,12 @@ export async function saveMuestraLocal(m: Muestra): Promise<void> {
   m.updatedAt = new Date().toISOString();
   m.sync = "pending";
   await db.muestras.put(m);
-  await cacheCatalogosFromMuestra(m);
+  // Ya NO se cachea acá el catálogo de sugerencias (ver recordarCatalogoValor
+  // más abajo, y el porqué en su comentario) — esto corre en CADA autoguardado
+  // (varias veces por muestra, mientras el inspector sigue escribiendo en
+  // cualquier campo), así que guardaba como "sugerencia para siempre"
+  // cualquier texto a medio tipear o de prueba, no solo lo que quedaba
+  // confirmado.
 }
 
 /**
@@ -100,27 +105,25 @@ export async function listMuestrasLocal(): Promise<Muestra[]> {
   return all.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
 }
 
-/** Registra los valores usados para alimentar el autocompletado. */
-async function cacheCatalogosFromMuestra(m: Muestra) {
-  const entries: CatalogoEntry[] = [];
-  const add = (tipo: string, valor?: string, extra?: string) => {
-    if (valor && valor.trim()) entries.push({ tipo, valor: valor.trim(), extra });
-  };
-  add("inspector", m.inspector, m.dniInspector);
-  add("empacador", m.empacador, m.dniEmpacador);
-  add("supervisor", m.supervisor);
-  add("cliente", m.cliente);
-  add("productor", m.productor);
-  add("destino", m.destino);
-  add("variedad", m.variedad);
-  add("formato", m.formato);
-  add("calibre", m.calibre);
-  add("embalaje_caja", m.embalajeCaja);
-  add("embalaje_clamshell", m.embalajeClamshell);
-  add("tipo_empaque", m.tipoEmpaque);
-  add("linea", m.linea);
-  add("intervalo_cosecha", m.intervaloCosecha);
-  if (entries.length) await db.catalogos.bulkPut(entries);
+/**
+ * Recuerda UN valor puntual como sugerencia futura del autocompletado —
+ * reemplaza a la vieja cacheCatalogosFromMuestra(), que guardaba TODOS los
+ * campos de la muestra en CADA autoguardado (varias veces por muestra),
+ * sin importar si el inspector ya había terminado de escribir ese campo o
+ * seguía a medio tipear/probando. Eso hacía que texto de prueba o errores de
+ * tipeo ("S", "dxfcece") quedaran guardados como sugerencia para siempre.
+ *
+ * Ahora cada campo de Autocomplete (ver components/inspector/Autocomplete.tsx)
+ * llama a esto SOLO al perder el foco / cerrarse (el inspector ya "terminó"
+ * con ese campo), no en cada autoguardado — así solo se recuerda lo que
+ * quedó puesto de verdad. Se descarta un valor de un solo carácter (ej. "S"
+ * tipeado sin querer): un valor real de catálogo nunca es tan corto.
+ */
+export async function recordarCatalogoValor(tipo: string, valor: string, extra?: string): Promise<void> {
+  if (!db) return;
+  const limpio = (valor || "").trim();
+  if (limpio.length < 2) return;
+  await db.catalogos.put({ tipo, valor: limpio, extra: extra?.trim() || undefined });
 }
 
 export async function getCatalogo(tipo: string): Promise<CatalogoEntry[]> {
@@ -242,7 +245,33 @@ export async function seedListaMaestra(): Promise<void> {
 
   await db.catalogos.bulkPut(entries);
   await limpiarClientesDuplicados();
-  await limpiarEmpacadoresObsoletos();
+
+  // Limpieza general de los catálogos "cerrados" (con lista oficial COMPLETA
+  // desde el Excel de referencia — a diferencia de "cliente"/"supervisor",
+  // que sí admiten sumar valores nuevos legítimos con el tiempo y por eso NO
+  // se tocan acá): borra cualquier sugerencia que no esté en la lista
+  // oficial — texto de prueba, errores de tipeo, o entradas de una versión
+  // vieja de la lista (ver el caso real de "empacador" más abajo). No toca
+  // ninguna muestra ya guardada, solo la sugerencia cacheada.
+  await limpiarCatalogoNoOficial("destino", LISTA_MAESTRA.destinos);
+  await limpiarCatalogoNoOficial("formato", LISTA_MAESTRA.formatos);
+  await limpiarCatalogoNoOficial("calibre", LISTA_MAESTRA.calibres);
+  await limpiarCatalogoNoOficial("tipo_empaque", LISTA_MAESTRA.tiposEmpaque);
+  await limpiarCatalogoNoOficial("embalaje_caja", LISTA_MAESTRA.embalajesCaja);
+  await limpiarCatalogoNoOficial("embalaje_clamshell", LISTA_MAESTRA.etiquetasClamshell);
+  await limpiarCatalogoNoOficial("variedad", LISTA_MAESTRA.variedades);
+  await limpiarCatalogoNoOficial("productor", LISTA_MAESTRA.productores);
+  await limpiarCatalogoNoOficial("linea", LISTA_MAESTRA.lineas.map(String));
+  await limpiarCatalogoNoOficial("intervalo_cosecha", LISTA_MAESTRA.intervalosCosecha.map(String));
+  await limpiarCatalogoNoOficial("planta_empaque", LISTA_MAESTRA.plantasEmpaque);
+  await limpiarCatalogoNoOficial(
+    "inspector",
+    LISTA_MAESTRA.inspectores.map((i) => i.nombre)
+  );
+  await limpiarCatalogoNoOficial(
+    "empacador",
+    LISTA_MAESTRA.empacadores.map((e) => e.nombre)
+  );
 }
 
 /**
@@ -263,62 +292,23 @@ async function limpiarClientesDuplicados(): Promise<void> {
 }
 
 /**
- * Encontrado en auditoría: hasta el 08/09/2026, LISTA_MAESTRA.empacadores
- * era una lista de 36 nombres sin DNI (columnas incompletas de la hoja
- * "Lista Maestra" del primer Excel). Se reemplazó por 203 registros con DNI
- * reales de la hoja EMPACADORES del Excel de referencia — pero varios de
- * esos 36 nombres viejos son apellidos/nombres RECORTADOS o con errores de
- * tipeo del mismo empacador que ahora aparece completo (ej. "FARROÑAN
- * SANDOVAL MANUEL" vs "FARROÑAN SANDOVAL WILLIAN JOEL" / "...YORDY MANUEL";
- * "PECHE SANTIESTEBAN ROGGER" vs "PECHE SANTISTEBAN ROGGER", con distinta
- * ortografía). Como seedListaMaestra() solo agrega (nunca borra), cualquier
- * dispositivo que ya hubiera usado la app antes de ese cambio conserva esos
- * 36 nombres viejos SIN DNI como sugerencias, generando duplicados confusos
- * en el autocompletado de Empacador — y si un inspector elige por error la
- * versión vieja, pierde el autocompletado de DNI que si tiene la versión
- * nueva. Se borran acá (misma idea que limpiarClientesDuplicados de
- * arriba): esto solo limpia la SUGERENCIA cacheada, nunca toca muestras ya
- * guardadas con ese nombre. Los 6 nombres de esa lista vieja que sí
- * coinciden EXACTO con la nueva (y por lo tanto no generan duplicado) no
- * están acá: "ACOSTA SANCHEZ JOSE", "CHAPOÑAN ZAPATA MARIELA", "LLONTOP
- * PINGO LUCINDA", "MORI BANCES CECILIO", "SIESQUEN SANDOVAL ELIZABETH",
- * "SOPLAPUCO MOZO JUAN FRANCISCO".
+ * Borra, de un catálogo "cerrado" (ver seedListaMaestra), cualquier
+ * sugerencia que no esté en su lista oficial de valores — texto de prueba,
+ * errores de tipeo, o entradas de una versión vieja de la lista (ej. hasta
+ * el 08/09/2026 "empacador" era una lista de 36 nombres sin DNI, recortados
+ * o con errores de tipeo frente a los 203 nombres completos que reemplazaron
+ * esa lista — "FARROÑAN SANDOVAL MANUEL" vs "FARROÑAN SANDOVAL WILLIAN
+ * JOEL"/"...YORDY MANUEL"; como seedListaMaestra() solo agrega, nunca borra,
+ * esos 36 nombres viejos quedaban para siempre como duplicados confusos en
+ * cualquier dispositivo que ya hubiera usado la app antes de ese cambio).
+ * Solo limpia la SUGERENCIA cacheada; nunca toca una muestra ya guardada.
  */
-async function limpiarEmpacadoresObsoletos(): Promise<void> {
-  const OBSOLETOS = [
-    "ACOSTA CALLACNA MANUEL",
-    "BANCES SANTIESTEBAN MELISSA",
-    "CHAPOÑAN ZAPATA JESUS",
-    "FARROÑAN SANDOVAL MANUEL",
-    "LLONTOP PINGO VIOLETA",
-    "LLONTOP SANTAMARÍA ESPERANZA",
-    "LLONTOP SANTAMARÍA JULIA",
-    "MACALOPU SERREPE KASANDRA",
-    "MACALOPU SERREPE ROMARIO",
-    "MAZA IZQUIERDO RUTH",
-    "MONTALVÁN GÓMEZ ANDY",
-    "NIMA TORRES JOSE",
-    "OLIVA NIMA TOMAS",
-    "PECHE SANTIESTEBAN GEAN MARCO",
-    "PECHE SANTIESTEBAN ROGGER",
-    "SANDOVAL BANCES ALEXIS",
-    "SANDOVAL FARROÑAN DIANA",
-    "SANDOVAL FARROÑAN HERBER",
-    "SANTAMARÍA BALDERA MARTINA",
-    "SANTAMARÍA SOPLAPUCO JUANA",
-    "SANTIESTEBAN LLONTOP DILBER",
-    "SOPLAPUCO LLONTOP MIGUEL",
-    "SOPLOPUCO SANTAMARÍA MARTIN",
-    "SUCLUPE SANDOVAL CESAR",
-    "TANTALEAN ACOSTA DAVID",
-    "TINEO CUEVA LUZ",
-    "TIQUILLAHUANCA SÁNCHEZ SAMUEL",
-    "VALDERA SANTIESTEBAN FRANK",
-    "ZAPATA LLONTOP ANDERSON",
-    "ZEÑA  SANTIESTEBAN JOSÉ", // doble espacio intencional: así quedó guardado
-  ];
-  for (const nombre of OBSOLETOS) {
-    const entrada = await db.catalogos.get(["empacador", nombre]);
-    if (entrada) await db.catalogos.delete(["empacador", nombre]);
+async function limpiarCatalogoNoOficial(tipo: string, oficiales: readonly string[]): Promise<void> {
+  const permitidos = new Set(oficiales.map((v) => v.trim()));
+  const existentes = await db.catalogos.where("tipo").equals(tipo).toArray();
+  for (const entrada of existentes) {
+    if (!permitidos.has(entrada.valor)) {
+      await db.catalogos.delete([tipo, entrada.valor]);
+    }
   }
 }

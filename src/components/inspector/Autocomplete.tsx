@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { Input, Label } from "@/components/ui/input";
 import { useCatalogo } from "@/hooks/useMuestras";
+import { recordarCatalogoValor } from "@/lib/db";
 import { cn } from "@/lib/utils";
 
 /**
@@ -37,6 +38,7 @@ export function Autocomplete({
   onChange,
   placeholder,
   onPick,
+  extra,
 }: {
   label: string;
   tipo: string;
@@ -44,6 +46,9 @@ export function Autocomplete({
   onChange: (v: string) => void;
   placeholder?: string;
   onPick?: (extra?: string) => void; // p.ej. autocompletar DNI asociado
+  /** Valor a asociar con `value` al recordarlo como sugerencia (ej. el DNI
+   *  ya cargado, para Inspector/Empacador) — ver recordar() más abajo. */
+  extra?: string;
 }) {
   const inputId = useId();
   const opcionesRaw = useCatalogo(tipo);
@@ -61,13 +66,41 @@ export function Autocomplete({
     return lista.slice(0, 50);
   }, [opciones, value]);
 
+  // Recuerda el valor actual como sugerencia futura — se llama SOLO cuando
+  // el campo se da por "terminado" (blur, cerrar la hoja de celular, clic
+  // afuera), nunca en cada autoguardado: así no queda guardado para siempre
+  // texto a medio escribir o de prueba. recordarCatalogoValor() ya descarta
+  // valores de un solo carácter y espacios en blanco.
+  function recordar() {
+    recordarCatalogoValor(tipo, value, extra).catch((err) =>
+      console.error("[Autocomplete] no se pudo recordar el valor", tipo, err)
+    );
+  }
+
+  function cerrar() {
+    setOpen(false);
+    setHighlight(-1);
+    recordar();
+  }
+
+  // El listener de "clic afuera" de abajo se suscribe una sola vez por cada
+  // apertura (deps: [open], no en cada tecla — resuscribirlo en cada tecla
+  // sería un listener global de más por tecla, en 15 campos a la vez). Pero
+  // el campo sigue recibiendo teclas mientras `open` se mantiene en true, así
+  // que si `cerrar` quedara fijo al momento de abrir el dropdown, un clic
+  // afuera recordaría el valor de ESE momento, no lo último tipeado. Este
+  // ref siempre apunta a la versión más nueva de `cerrar` (se reasigna en
+  // cada render, sin useEffect propio), así el listener nunca queda obsoleto.
+  const cerrarRef = useRef(cerrar);
+  cerrarRef.current = cerrar;
+
   // Cierra el dropdown de escritorio al tocar/hacer clic fuera del campo.
   // La hoja de móvil se cierra con su propio fondo/botón "Listo" (más abajo),
   // no con este listener.
   useEffect(() => {
     if (!open) return;
     function onOutside(e: MouseEvent | TouchEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) cerrarRef.current();
     }
     document.addEventListener("mousedown", onOutside);
     document.addEventListener("touchstart", onOutside);
@@ -113,6 +146,10 @@ export function Autocomplete({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
+          // Acá es donde se recuerda el valor en escritorio: el campo perdió
+          // el foco de verdad (no por elegir una opción — esas usan
+          // onMouseDown+preventDefault, que evita que este blur dispare).
+          onBlur={() => recordar()}
           onKeyDown={(e) => {
             // La navegación con flechas/Enter es para teclado físico
             // (computadora) — en el celular la hoja de abajo se usa
@@ -159,7 +196,7 @@ export function Autocomplete({
       {open && (
         <div
           className="fixed inset-0 z-50 flex items-end bg-black/50 sm:hidden"
-          onClick={() => setOpen(false)}
+          onClick={cerrar}
           role="presentation"
         >
           <div
@@ -183,7 +220,7 @@ export function Autocomplete({
                 // cuanto se abre la hoja, así que Escape no hacía nada hasta
                 // este fix (había que tocar el fondo o "Listo" a mano).
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") setOpen(false);
+                  if (e.key === "Escape") cerrar();
                 }}
                 className="w-full rounded-md border border-white/15 bg-white/10 px-3 py-2.5 text-[15px] text-white placeholder-white/40 outline-none focus:border-white/30"
               />
@@ -205,7 +242,7 @@ export function Autocomplete({
             <div className="border-t border-white/10 p-3">
               <button
                 type="button"
-                onClick={() => setOpen(false)}
+                onClick={cerrar}
                 className="w-full rounded-md bg-white/10 py-2.5 text-center text-sm font-semibold active:bg-white/20"
               >
                 Listo
