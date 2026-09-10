@@ -21,26 +21,44 @@ import type { Muestra } from "@/lib/types";
 import { useSession, useAuth, extraerGrupoEspecificaciones } from "@/lib/store";
 
 /**
+ * ¿Esta muestra es de este usuario? Usada por el aislamiento por usuario de
+ * abajo. No compara SOLO por uid exacto — bug real encontrado en producción
+ * (Betsy: "Mis muestras" se veía vacía con muestras suyas ya cargadas):
+ * createdBy no siempre quedó igual al auth.uid() actual en TODAS las
+ * muestras (datos de antes de que la autenticación quedara completamente
+ * cableada, o una muestra creada en el instante justo en que la sesión
+ * todavía estaba resolviendo — auth.userId podía ser null por una fracción
+ * de segundo). Comparar solo por uid exacto escondía esas muestras para
+ * siempre, aunque fueran 100% del mismo inspector. Por eso también hace
+ * fallback por el NOMBRE del perfil autenticado (m.createdBy o m.inspector
+ * coincidiendo con el nombre) — cubre esos casos sin dejar de aislar entre
+ * inspectores realmente distintos.
+ */
+export function esDelUsuarioActual(m: Muestra, userId: string | null, nombrePerfil: string | null): boolean {
+  if (!userId) return true; // sin sesión (modo local/demo): no se filtra
+  if (m.createdBy === userId) return true;
+  if (nombrePerfil && (m.createdBy === nombrePerfil || m.inspector === nombrePerfil)) return true;
+  return false;
+}
+
+/**
  * Aislamiento por usuario: cada inspector solo ve (y por lo tanto solo
  * puede listar/editar/eliminar desde la UI) las muestras que ÉL creó —
  * antes, en un dispositivo compartido entre turnos, se veían mezcladas las
  * de todos los inspectores que hubieran usado ESE celular/tablet puntual
- * (IndexedDB es local al dispositivo, no por usuario). Se filtra por
- * `createdBy` (el uid de auth.uid(), el mismo que ya usan las políticas RLS
- * del lado del servidor — ver supabase/schema.sql). Sin login (modo local/
- * demo, sin backend configurado) no hay un usuario real que filtrar, así
- * que se sigue mostrando todo, igual que siempre en ese modo — el
- * aislamiento es un requisito de uso multi-inspector con backend, no del
- * modo de prueba local.
+ * (IndexedDB es local al dispositivo, no por usuario). Sin login (modo
+ * local/demo, sin backend configurado) no hay un usuario real que filtrar,
+ * así que se sigue mostrando todo, igual que siempre en ese modo.
  */
 export function useMuestras() {
   const userId = useAuth((s) => s.userId);
+  const nombrePerfil = useAuth((s) => s.profile?.nombre ?? null);
   return useLiveQuery(
     async () => {
       const all = await listMuestrasLocal();
-      return userId ? all.filter((m) => m.createdBy === userId) : all;
+      return all.filter((m) => esDelUsuarioActual(m, userId, nombrePerfil));
     },
-    [userId],
+    [userId, nombrePerfil],
     [] as Muestra[]
   );
 }

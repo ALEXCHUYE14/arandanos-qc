@@ -9,7 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { MuestraHeaderForm } from "@/components/inspector/MuestraHeaderForm";
 import { ClamshellEditor } from "@/components/inspector/ClamshellEditor";
-import { useMuestra, updateMuestra, removeMuestra } from "@/hooks/useMuestras";
+import { useMuestra, updateMuestra, removeMuestra, esDelUsuarioActual } from "@/hooks/useMuestras";
 import { computeMuestra, emptyClamshell } from "@/lib/calc";
 import { copyMuestraToClipboard } from "@/lib/excel";
 import { useAuth } from "@/lib/store";
@@ -56,7 +56,11 @@ export default function CapturaPage() {
   // por URL directa a una muestra que no es de este inspector — jefatura
   // igual puede abrir cualquiera (no navega normalmente por acá, pero no
   // hay motivo para bloquearla si lo hace).
-  if (auth.userId && draft.createdBy !== auth.userId && auth.profile?.rol !== "jefatura") {
+  if (
+    auth.userId &&
+    auth.profile?.rol !== "jefatura" &&
+    !esDelUsuarioActual(draft, auth.userId, auth.profile?.nombre ?? null)
+  ) {
     return (
       <main className="px-4 py-10 text-center text-sm text-muted">
         Esta muestra no te pertenece o no existe.

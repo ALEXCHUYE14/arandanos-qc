@@ -32,10 +32,28 @@ export default function InspectorListPage() {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [limpiando, setLimpiando] = useState(false);
   const [errorLimpiar, setErrorLimpiar] = useState<string | null>(null);
+  // "Nueva muestra" es 100% local (IndexedDB, nunca espera a la red) — pero
+  // igual se protege con try/catch + un estado de "creando" que deshabilita
+  // el botón mientras tanto: sin esto, un doble-toque accidental disparaba
+  // createMuestra() dos veces (dos muestras en blanco), y si algo fallara
+  // (ej. IndexedDB bloqueado por otra pestaña) no había ningún aviso — el
+  // botón simplemente no parecía hacer nada.
+  const [creandoMuestra, setCreandoMuestra] = useState(false);
+  const [errorNueva, setErrorNueva] = useState<string | null>(null);
 
   async function nueva() {
-    const m = await createMuestra();
-    router.push(`/inspector/muestra/${m.id}`);
+    if (creandoMuestra) return;
+    setCreandoMuestra(true);
+    setErrorNueva(null);
+    try {
+      const m = await createMuestra();
+      router.push(`/inspector/muestra/${m.id}`);
+    } catch (err) {
+      console.error("[Nueva muestra] no se pudo crear", err);
+      setErrorNueva("No se pudo crear la muestra. Probá de nuevo.");
+    } finally {
+      setCreandoMuestra(false);
+    }
   }
 
   /** Descarga TODAS las muestras de esta lista en un único Excel — antes
@@ -137,11 +155,17 @@ export default function InspectorListPage() {
               </Button>
             </>
           )}
-          <Button onClick={nueva} size="lg">
-            <Plus className="h-5 w-5" /> Nueva muestra
+          <Button onClick={nueva} size="lg" disabled={creandoMuestra}>
+            <Plus className="h-5 w-5" /> {creandoMuestra ? "Creando…" : "Nueva muestra"}
           </Button>
         </div>
       </div>
+
+      {errorNueva && (
+        <div className="mb-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
+          {errorNueva}
+        </div>
+      )}
 
       {/* Grupo de especificaciones activo: Cliente/Destino/Variedad/etc. que
           va a heredar automáticamente la PRÓXIMA muestra nueva — así no hace
@@ -168,8 +192,8 @@ export default function InspectorListPage() {
           <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
             <ClipboardList className="h-10 w-10 text-muted" />
             <p className="text-sm text-muted">Aún no has registrado muestras.</p>
-            <Button onClick={nueva}>
-              <Plus className="h-4 w-4" /> Crear la primera
+            <Button onClick={nueva} disabled={creandoMuestra}>
+              <Plus className="h-4 w-4" /> {creandoMuestra ? "Creando…" : "Crear la primera"}
             </Button>
           </CardContent>
         </Card>
