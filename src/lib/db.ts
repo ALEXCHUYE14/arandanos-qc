@@ -242,6 +242,7 @@ export async function seedListaMaestra(): Promise<void> {
 
   await db.catalogos.bulkPut(entries);
   await limpiarClientesDuplicados();
+  await limpiarEmpacadoresObsoletos();
 }
 
 /**
@@ -258,5 +259,66 @@ async function limpiarClientesDuplicados(): Promise<void> {
   for (const nombre of DUPLICADOS) {
     const entrada = await db.catalogos.get(["cliente", nombre]);
     if (entrada) await db.catalogos.delete(["cliente", nombre]);
+  }
+}
+
+/**
+ * Encontrado en auditoría: hasta el 08/09/2026, LISTA_MAESTRA.empacadores
+ * era una lista de 36 nombres sin DNI (columnas incompletas de la hoja
+ * "Lista Maestra" del primer Excel). Se reemplazó por 203 registros con DNI
+ * reales de la hoja EMPACADORES del Excel de referencia — pero varios de
+ * esos 36 nombres viejos son apellidos/nombres RECORTADOS o con errores de
+ * tipeo del mismo empacador que ahora aparece completo (ej. "FARROÑAN
+ * SANDOVAL MANUEL" vs "FARROÑAN SANDOVAL WILLIAN JOEL" / "...YORDY MANUEL";
+ * "PECHE SANTIESTEBAN ROGGER" vs "PECHE SANTISTEBAN ROGGER", con distinta
+ * ortografía). Como seedListaMaestra() solo agrega (nunca borra), cualquier
+ * dispositivo que ya hubiera usado la app antes de ese cambio conserva esos
+ * 36 nombres viejos SIN DNI como sugerencias, generando duplicados confusos
+ * en el autocompletado de Empacador — y si un inspector elige por error la
+ * versión vieja, pierde el autocompletado de DNI que si tiene la versión
+ * nueva. Se borran acá (misma idea que limpiarClientesDuplicados de
+ * arriba): esto solo limpia la SUGERENCIA cacheada, nunca toca muestras ya
+ * guardadas con ese nombre. Los 6 nombres de esa lista vieja que sí
+ * coinciden EXACTO con la nueva (y por lo tanto no generan duplicado) no
+ * están acá: "ACOSTA SANCHEZ JOSE", "CHAPOÑAN ZAPATA MARIELA", "LLONTOP
+ * PINGO LUCINDA", "MORI BANCES CECILIO", "SIESQUEN SANDOVAL ELIZABETH",
+ * "SOPLAPUCO MOZO JUAN FRANCISCO".
+ */
+async function limpiarEmpacadoresObsoletos(): Promise<void> {
+  const OBSOLETOS = [
+    "ACOSTA CALLACNA MANUEL",
+    "BANCES SANTIESTEBAN MELISSA",
+    "CHAPOÑAN ZAPATA JESUS",
+    "FARROÑAN SANDOVAL MANUEL",
+    "LLONTOP PINGO VIOLETA",
+    "LLONTOP SANTAMARÍA ESPERANZA",
+    "LLONTOP SANTAMARÍA JULIA",
+    "MACALOPU SERREPE KASANDRA",
+    "MACALOPU SERREPE ROMARIO",
+    "MAZA IZQUIERDO RUTH",
+    "MONTALVÁN GÓMEZ ANDY",
+    "NIMA TORRES JOSE",
+    "OLIVA NIMA TOMAS",
+    "PECHE SANTIESTEBAN GEAN MARCO",
+    "PECHE SANTIESTEBAN ROGGER",
+    "SANDOVAL BANCES ALEXIS",
+    "SANDOVAL FARROÑAN DIANA",
+    "SANDOVAL FARROÑAN HERBER",
+    "SANTAMARÍA BALDERA MARTINA",
+    "SANTAMARÍA SOPLAPUCO JUANA",
+    "SANTIESTEBAN LLONTOP DILBER",
+    "SOPLAPUCO LLONTOP MIGUEL",
+    "SOPLOPUCO SANTAMARÍA MARTIN",
+    "SUCLUPE SANDOVAL CESAR",
+    "TANTALEAN ACOSTA DAVID",
+    "TINEO CUEVA LUZ",
+    "TIQUILLAHUANCA SÁNCHEZ SAMUEL",
+    "VALDERA SANTIESTEBAN FRANK",
+    "ZAPATA LLONTOP ANDERSON",
+    "ZEÑA  SANTIESTEBAN JOSÉ", // doble espacio intencional: así quedó guardado
+  ];
+  for (const nombre of OBSOLETOS) {
+    const entrada = await db.catalogos.get(["empacador", nombre]);
+    if (entrada) await db.catalogos.delete(["empacador", nombre]);
   }
 }

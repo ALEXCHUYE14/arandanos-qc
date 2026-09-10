@@ -113,8 +113,15 @@ export default function ReportePage() {
         siempre el mismo layout nítido, sin importar si quien exporta lo hace
         desde el celular o la computadora. No se ve en pantalla ni afecta la
         vista responsiva de arriba.
+
+        "no-print": position:fixed no garantiza que quede fuera del papel al
+        imprimir (Ctrl+P) — varios navegadores igual la llevan al flujo de
+        impresión, duplicando el reporte en una copia angosta de 820px junto
+        a la responsiva de arriba. Esta clase la oculta con display:none solo
+        en @media print (ver globals.css); no afecta el export PNG/PDF, que
+        captura el DOM en pantalla normal, no en modo impresión.
       */}
-      <div aria-hidden style={{ position: "fixed", top: 0, left: -99999 }}>
+      <div aria-hidden className="no-print" style={{ position: "fixed", top: 0, left: -99999 }}>
         <ReportView ref={ref} variant="export" muestra={m} />
       </div>
     </main>

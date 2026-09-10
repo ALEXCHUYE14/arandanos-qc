@@ -20,6 +20,7 @@ export default function InspectorListPage() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [limpiando, setLimpiando] = useState(false);
+  const [errorLimpiar, setErrorLimpiar] = useState<string | null>(null);
 
   async function nueva() {
     const m = await createMuestra();
@@ -45,12 +46,23 @@ export default function InspectorListPage() {
    */
   async function limpiarRegistros() {
     setLimpiando(true);
-    try {
-      await Promise.all(muestras.map((m) => removeMuestra(m.id)));
-    } catch (e) {
-      console.error("[limpiar registros] no se pudo borrar alguna muestra", e);
-    } finally {
-      setLimpiando(false);
+    setErrorLimpiar(null);
+    // Promise.allSettled (no Promise.all): si UNA muestra falla al
+    // borrarse, Promise.all habría cortado ahí, ocultando qué pasó con el
+    // resto de los borrados que sí se habían disparado en paralelo, y el
+    // modal se cerraba igual (por el finally) como si hubiera funcionado
+    // todo. Ahora se espera a que terminen todas, se cuentan las que
+    // fallaron y, si hubo alguna, el modal NO se cierra solo — se avisa y
+    // se puede reintentar (solo quedan las que realmente no se borraron).
+    const resultados = await Promise.allSettled(muestras.map((m) => removeMuestra(m.id)));
+    const fallidas = resultados.filter((r) => r.status === "rejected").length;
+    setLimpiando(false);
+    if (fallidas > 0) {
+      console.error(`[limpiar registros] fallaron ${fallidas} de ${muestras.length} borrados`);
+      setErrorLimpiar(
+        `No se pudieron borrar ${fallidas} de ${muestras.length} muestra(s). Se borraron las demás — probá de nuevo para las que quedan.`
+      );
+    } else {
       setConfirmOpen(false);
     }
   }
@@ -92,7 +104,15 @@ export default function InspectorListPage() {
               <Button variant="outline" size="sm" onClick={descargarTodo}>
                 <FileSpreadsheet className="h-4 w-4" /> Descargar todo (Excel)
               </Button>
-              <Button variant="outline" size="sm" className="text-danger" onClick={() => setConfirmOpen(true)}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-danger"
+                onClick={() => {
+                  setErrorLimpiar(null);
+                  setConfirmOpen(true);
+                }}
+              >
                 <Trash2 className="h-4 w-4" /> Limpiar registros
               </Button>
             </>
@@ -187,6 +207,11 @@ export default function InspectorListPage() {
             <br />
             Las que ya estén sincronizadas siguen a salvo en el servidor (panel del Coordinador de
             Calidad) — no se borran de ahí, solo de esta lista, y no van a volver a aparecer acá.
+            {errorLimpiar && (
+              <p className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs font-medium text-danger">
+                {errorLimpiar}
+              </p>
+            )}
           </>
         }
         confirmLabel="Sí, limpiar"
