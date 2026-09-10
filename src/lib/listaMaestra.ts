@@ -122,6 +122,15 @@ export const LISTA_MAESTRA = {
    * de personal detectados frente a la lista previa: se dio de baja
    * "SANTISTEBAN ALAMO JAIR MICHAEL" (DNI 75790001, ya no aparece en la hoja
    * fuente) y se agregó "VALLEJOS PAIVA ELIZABETH" (DNI 76740678).
+   *
+   * "Betsy Crisanto Valdiviezo" (DNI 76239849, 09/09/2026) NO está en esa
+   * hoja — el usuario la agregó directamente porque es una inspectora real
+   * activa (Coordinadora de Calidad, ver excel.ts → hoja "Control de
+   * Cambios") que faltaba en el archivo de referencia. El nombre se dejó
+   * exactamente como ya se usa en el resto del sistema (fixInspectorNameTypo
+   * en este mismo archivo, excel.ts) para que calce con las muestras que ya
+   * tiene guardadas, en vez de la convención ALL CAPS Apellidos-Nombre del
+   * resto de esta lista.
    */
   inspectores: [
     { dni: "70215616", nombre: "ROQUE ZAVALA PAULINO ROBERT" },
@@ -135,6 +144,7 @@ export const LISTA_MAESTRA = {
     { dni: "78114711", nombre: "TINEO ZEÑA ANGGY ZADITH" },
     { dni: "75528187", nombre: "BARRIOS FLORES FLOR" },
     { dni: "76740678", nombre: "VALLEJOS PAIVA ELIZABETH" },
+    { dni: "76239849", nombre: "Betsy Crisanto Valdiviezo" },
   ],
 
   /**
