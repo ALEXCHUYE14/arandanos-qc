@@ -15,6 +15,7 @@ import {
   Radio,
   TrendingUp,
   TrendingDown,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -158,9 +159,16 @@ export default function DashboardPage() {
             </Badge>
           )}
           {isSupabaseConfigured && (
-            <Button variant="outline" size="sm" onClick={sincronizar} disabled={syncing}>
-              <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> Sincronizar
-            </Button>
+            <>
+              <Link href="/dashboard/usuarios">
+                <Button variant="outline" size="sm">
+                  <Users className="h-4 w-4" /> Usuarios
+                </Button>
+              </Link>
+              <Button variant="outline" size="sm" onClick={sincronizar} disabled={syncing}>
+                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> Sincronizar
+              </Button>
+            </>
           )}
           <Button variant="outline" size="sm" onClick={copiarTodo}>
             {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
