@@ -71,6 +71,29 @@ export interface Muestra {
   pesoEstablecido: string | null;
   medidaCorrectiva: string; // "SI" | "NO" | detalle
   observaciones: string;
+  /**
+   * Nota manual de la muestra completa (5 o 15, null = todavía sin definir).
+   * Reemplaza, para mostrar en la cabecera de la muestra y en el reporte, al
+   * badge automático "CUMPLE"/"NO CUMPLE" — el inspector la elige a mano en
+   * la sección Evaluación (ver MuestraHeaderForm.tsx). Es SOLO para mostrar:
+   * el cálculo de defectos/tolerancias/nota por Clamshell (cs.nota, en
+   * Clamshell más abajo) sigue exactamente igual, no se toca ni se usa para
+   * decidir cumplimiento en ningún otro lado (dashboard, Excel, etc.).
+   * Registros viejos (de antes de este campo) quedan en `null` — quien
+   * muestre esta nota debe caer al valor automático (`r.cumple`) cuando sea
+   * `null`, nunca romper el render.
+   */
+  notaManual: number | null;
+  /**
+   * Id del "Grupo de especificaciones" (carpeta) al que pertenece esta
+   * muestra — ver GrupoEntry en lib/db.ts. `null` = muestra suelta, sin
+   * carpeta (compatibilidad con datos de antes de esta función, o creada
+   * fuera de cualquier carpeta). Las Especificaciones (Cliente/Destino/
+   * Variedad/etc.) siempre se copian completas a CADA muestra igual que
+   * antes — este id es solo para AGRUPAR/LISTAR en la UI, ningún cálculo ni
+   * exportación depende de él.
+   */
+  grupoId: string | null;
 
   clamshells: Clamshell[];
 
@@ -127,4 +150,62 @@ export interface AppUserProfile {
   nombre: string;
   dni: string;
   rol: "inspector" | "jefatura";
+}
+
+/**
+ * "Grupo de especificaciones" (carpeta/lote) — para no repetir Cliente/
+ * Destino/Variedad/Formato/etc. en cada empacador consecutivo (Pepito,
+ * Juanito, Lupe...). Son SOLO los campos de especificación del lote/
+ * proceso — nunca Personal (Inspector/Empacador/DNI) ni la evaluación
+ * (clamshells/observaciones/notaManual): esos sí cambian por muestra y no
+ * deben heredarse del grupo.
+ */
+export interface GrupoEspecificaciones {
+  cliente: string;
+  destino: string;
+  variedad: string;
+  formato: string;
+  tipoEmpaque: string;
+  calibre: string;
+  embalajeCaja: string;
+  embalajeClamshell: string;
+  pesoEstablecido: string | null;
+  productor: string;
+  plantaEmpaque: string;
+  linea: string;
+  intervaloCosecha: string;
+  turno: Turno;
+}
+
+/** Recorta una Muestra completa a solo sus campos de especificación. */
+export function extraerGrupoEspecificaciones(m: Muestra): GrupoEspecificaciones {
+  return {
+    cliente: m.cliente,
+    destino: m.destino,
+    variedad: m.variedad,
+    formato: m.formato,
+    tipoEmpaque: m.tipoEmpaque,
+    calibre: m.calibre,
+    embalajeCaja: m.embalajeCaja,
+    embalajeClamshell: m.embalajeClamshell,
+    pesoEstablecido: m.pesoEstablecido,
+    productor: m.productor,
+    plantaEmpaque: m.plantaEmpaque,
+    linea: m.linea,
+    intervaloCosecha: m.intervaloCosecha,
+    turno: m.turno,
+  };
+}
+
+/**
+ * Un Grupo/Carpeta guardado (ver lib/db.ts → tabla `grupos`). `nombre` es un
+ * resumen automático ("Cliente · Destino · Variedad · Formato") — no hace
+ * falta que el inspector le ponga un nombre a mano.
+ */
+export interface GrupoEntry {
+  id: string;
+  nombre: string;
+  especificaciones: GrupoEspecificaciones;
+  createdAt: string;
+  createdBy: string; // mismo criterio que Muestra.createdBy (uid o nombre)
 }

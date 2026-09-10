@@ -63,6 +63,7 @@ function muestraToRow(m: Muestra) {
     peso_establecido: m.pesoEstablecido,
     medida_correctiva: m.medidaCorrectiva,
     observaciones: m.observaciones,
+    nota_manual: m.notaManual,
     created_at: m.createdAt,
     updated_at: m.updatedAt,
     created_by: m.createdBy,
@@ -112,6 +113,11 @@ export function rowToMuestra(r: any, clamshellRows: any[]): Muestra {
     pesoEstablecido: r.peso_establecido,
     medidaCorrectiva: r.medida_correctiva ?? "",
     observaciones: r.observaciones ?? "",
+    notaManual: r.nota_manual ?? null,
+    // grupoId ("carpeta") es puramente local, no viaja a Supabase — arranca
+    // en null acá; pullAll()/resolveConflictUseServer() lo restauran desde
+    // el registro local existente cuando corresponde (ver esos dos lugares).
+    grupoId: null,
     clamshells: clamshellRows
       .map((c: any) => ({
         id: c.id,
@@ -216,7 +222,16 @@ export async function pullAll(): Promise<number> {
     // usuario todavía no resolvió a mano.
     if (local && (local.sync === "pending" || local.sync === "conflict")) continue;
 
-    await db.muestras.put(rowToMuestra(r, byMuestra.get(r.id) || []));
+    const nueva = rowToMuestra(r, byMuestra.get(r.id) || []);
+    // grupoId (la "carpeta"/Grupo de especificaciones) es puramente local:
+    // no viaja a Supabase (ver muestraToRow arriba), así que rowToMuestra()
+    // siempre la deja en null. Sin este merge, cada sync automático (cada
+    // 60s) pisaba el registro completo con la versión del servidor y
+    // BORRABA la carpeta asignada a mano en este dispositivo, apenas la
+    // muestra terminaba de sincronizar una vez. Se preserva la que ya
+    // hubiera localmente.
+    if (local?.grupoId) nueva.grupoId = local.grupoId;
+    await db.muestras.put(nueva);
     merged++;
   }
   return merged;
@@ -243,7 +258,12 @@ export async function resolveConflictUseServer(id: string): Promise<void> {
   const { data: cls } = await withRetry(() =>
     supabase!.from("clamshells").select("*").eq("muestra_id", id)
   );
-  await db.muestras.put(rowToMuestra(r, cls || []));
+  const nueva = rowToMuestra(r, cls || []);
+  // Mismo motivo que en pullAll(): grupoId es local, no viaja a Supabase —
+  // se preserva la carpeta que ya tuviera esta muestra en este dispositivo.
+  const local = await db.muestras.get(id);
+  if (local?.grupoId) nueva.grupoId = local.grupoId;
+  await db.muestras.put(nueva);
 }
 
 /**

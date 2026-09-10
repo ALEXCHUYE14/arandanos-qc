@@ -69,6 +69,11 @@ export default function CapturaPage() {
   }
 
   const res = computeMuestra(draft);
+  // Nota mostrada en la cabecera: la manual (elegida a mano en la sección
+  // Evaluación) si ya se puso una; si no (todavía "— (automático)", o una
+  // muestra vieja de antes de que existiera este campo), cae al veredicto
+  // automático de siempre (res.cumple) — nunca queda en blanco ni rompe.
+  const notaMostrada = draft.notaManual ?? (res.cumple ? 15 : 5);
   const clamshells = [...draft.clamshells].sort((a, b) => a.nClamshell - b.nClamshell);
 
   function updateClamshell(cs: Clamshell) {
@@ -139,14 +144,11 @@ export default function CapturaPage() {
             )}
           </span>
           {/* "Nota 15" (verde) / "Nota 5" (rojo) — antes decía "CUMPLE"/
-              "NO CUMPLE". Es la MISMA nota de siempre (cs.nota por
-              Clamshell, 5 o 15 — automática o puesta a mano por el
-              inspector, ver calc.ts); acá solo cambió la etiqueta que se
-              muestra, no cómo se calcula. res.cumple ya era exactamente
-              "todos los Clamshells con nota 15" (ver computeMuestra en
-              lib/calc.ts), así que el criterio verde/rojo es el mismo. */}
-          <Badge variant={res.cumple ? "success" : "danger"}>
-            {res.cumple ? "Nota 15" : "Nota 5"}
+              "NO CUMPLE". Prioriza la nota MANUAL (sección Evaluación); si
+              todavía no se puso ninguna, cae al veredicto automático de
+              siempre (ver notaMostrada arriba) — nunca queda en blanco. */}
+          <Badge variant={notaMostrada === 15 ? "success" : "danger"}>
+            Nota {notaMostrada}
           </Badge>
         </div>
       </div>

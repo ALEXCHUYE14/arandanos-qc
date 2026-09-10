@@ -74,6 +74,7 @@ create table if not exists public.muestras (
   peso_establecido   text, -- antes numeric; texto libre para poder anotar el desglose por clamshell
   medida_correctiva  text default 'NO',
   observaciones      text default '',
+  nota_manual        integer, -- 5 o 15, elegida a mano; null = todavía sin definir (cae al veredicto automático en la app)
   created_at         timestamptz not null default now(),
   updated_at         timestamptz not null default now(),
   created_by         text default ''
@@ -247,7 +248,7 @@ begin
     id, codigo, id_maestro, semana, hora_evaluacion, fecha_cosecha, fecha_empaque, planta_empaque, linea, turno,
     productor, cliente, destino, variedad, formato, tipo_empaque, calibre, embalaje_caja, embalaje_clamshell,
     intervalo_cosecha, dni_inspector, inspector, supervisor, dni_empacador,
-    empacador, peso_establecido, medida_correctiva, observaciones, created_at, created_by
+    empacador, peso_establecido, medida_correctiva, observaciones, nota_manual, created_at, created_by
   )
   values (
     v_id,
@@ -262,7 +263,8 @@ begin
     p_muestra->>'dni_inspector', p_muestra->>'inspector', p_muestra->>'supervisor',
     p_muestra->>'dni_empacador', p_muestra->>'empacador',
     p_muestra->>'peso_establecido', p_muestra->>'medida_correctiva',
-    p_muestra->>'observaciones', coalesce((p_muestra->>'created_at')::timestamptz, now()),
+    p_muestra->>'observaciones', (p_muestra->>'nota_manual')::int,
+    coalesce((p_muestra->>'created_at')::timestamptz, now()),
     p_muestra->>'created_by'
   )
   on conflict (id) do update set
@@ -280,7 +282,7 @@ begin
     inspector = excluded.inspector, supervisor = excluded.supervisor,
     dni_empacador = excluded.dni_empacador, empacador = excluded.empacador,
     peso_establecido = excluded.peso_establecido, medida_correctiva = excluded.medida_correctiva,
-    observaciones = excluded.observaciones;
+    observaciones = excluded.observaciones, nota_manual = excluded.nota_manual;
 
   delete from public.clamshells c
   where c.muestra_id = v_id

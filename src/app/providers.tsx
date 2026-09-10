@@ -25,7 +25,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
     syncingRef.current = true;
     setSyncing(true);
     try {
-      await fullSync();
+      // Timeout de seguridad: si el fetch a Supabase se cuelga sin llegar a
+      // responder (wifi inestable, portal cautivo, etc.) `fullSync()` nunca
+      // resuelve NI rechaza — sin este límite, `syncingRef.current` quedaba
+      // en `true` para siempre y el sync automático de cada 60s (más abajo)
+      // dejaba de hacer nada hasta recargar la página entera, dando la
+      // sensación de que la app "se congeló". Con el timeout, se corta a los
+      // 20s, se marca como error (se reintenta en el próximo ciclo) y la UI
+      // (Mis Muestras, que es 100% local/IndexedDB) nunca dependió de esto
+      // para mostrar datos.
+      await Promise.race([
+        fullSync(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Tiempo de espera agotado (20s)")), 20_000)
+        ),
+      ]);
       setLastSync(new Date().toISOString());
     } catch (e) {
       console.error("[sync]", e);

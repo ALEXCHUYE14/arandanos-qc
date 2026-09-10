@@ -4,68 +4,24 @@
 
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { AppUserProfile, Muestra } from "./types";
-
-/**
- * "Grupo de especificaciones" activo — para no repetir Cliente/Destino/
- * Variedad/Formato/etc. en cada muestra nueva cuando varios empacadores
- * consecutivos comparten la misma configuración (Pepito, Juanito, Lupe...).
- * Son SOLO los campos de especificación del lote/proceso — nunca Personal
- * (Inspector/Empacador/DNI) ni la evaluación (clamshells/observaciones):
- * esos sí cambian por muestra y no deben heredarse de la anterior.
- */
-export interface GrupoEspecificaciones {
-  cliente: string;
-  destino: string;
-  variedad: string;
-  formato: string;
-  tipoEmpaque: string;
-  calibre: string;
-  embalajeCaja: string;
-  embalajeClamshell: string;
-  pesoEstablecido: string | null;
-  productor: string;
-  plantaEmpaque: string;
-  linea: string;
-  intervaloCosecha: string;
-  turno: Muestra["turno"];
-}
-
-/** Recorta una Muestra completa a solo sus campos de especificación. */
-export function extraerGrupoEspecificaciones(m: Muestra): GrupoEspecificaciones {
-  return {
-    cliente: m.cliente,
-    destino: m.destino,
-    variedad: m.variedad,
-    formato: m.formato,
-    tipoEmpaque: m.tipoEmpaque,
-    calibre: m.calibre,
-    embalajeCaja: m.embalajeCaja,
-    embalajeClamshell: m.embalajeClamshell,
-    pesoEstablecido: m.pesoEstablecido,
-    productor: m.productor,
-    plantaEmpaque: m.plantaEmpaque,
-    linea: m.linea,
-    intervaloCosecha: m.intervaloCosecha,
-    turno: m.turno,
-  };
-}
+import type { AppUserProfile } from "./types";
 
 interface SessionState {
   inspectorNombre: string;
   inspectorDni: string;
   plantaEmpaque: string;
   /**
-   * Grupo de especificaciones activo (ver GrupoEspecificaciones arriba) —
-   * se actualiza solo, en cada guardado de una muestra (ver updateMuestra en
-   * hooks/useMuestras.ts), para siempre reflejar la última especificación
-   * usada. `null` = sin grupo activo (la próxima muestra nueva arranca en
-   * blanco) — así queda tras "Cambiar especificaciones".
+   * Id del "Grupo de especificaciones" (carpeta) activo — ver GrupoEntry en
+   * lib/db.ts. Mientras hay uno activo, "Nueva muestra" hereda sus
+   * Especificaciones (Cliente/Destino/Variedad/etc.), así el inspector solo
+   * completa Empacador/DNI/evaluación. `null` = sin grupo activo, la
+   * próxima muestra nueva arranca en blanco (tras "Cambiar especificaciones"
+   * o al entrar por primera vez).
    */
-  grupoEspecificaciones: GrupoEspecificaciones | null;
+  grupoActivoId: string | null;
   setInspector: (nombre: string, dni: string) => void;
   setPlantaEmpaque: (p: string) => void;
-  setGrupoEspecificaciones: (g: GrupoEspecificaciones | null) => void;
+  setGrupoActivo: (id: string | null) => void;
 }
 
 export const useSession = create<SessionState>()(
@@ -74,10 +30,10 @@ export const useSession = create<SessionState>()(
       inspectorNombre: "",
       inspectorDni: "",
       plantaEmpaque: "",
-      grupoEspecificaciones: null,
+      grupoActivoId: null,
       setInspector: (inspectorNombre, inspectorDni) => set({ inspectorNombre, inspectorDni }),
       setPlantaEmpaque: (plantaEmpaque) => set({ plantaEmpaque }),
-      setGrupoEspecificaciones: (grupoEspecificaciones) => set({ grupoEspecificaciones }),
+      setGrupoActivo: (grupoActivoId) => set({ grupoActivoId }),
     }),
     { name: "arandanos-session" }
   )

@@ -3,26 +3,24 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Plus, ChevronRight, Home, ClipboardList, AlertTriangle, FileSpreadsheet, Trash2 } from "lucide-react";
+import { Plus, ChevronRight, Home, ClipboardList, AlertTriangle, FileSpreadsheet, Trash2, FolderPlus, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { useMuestras, createMuestra, removeMuestra } from "@/hooks/useMuestras";
+import { useMuestras, useGrupos, createMuestra, removeMuestra } from "@/hooks/useMuestras";
 import { computeMuestra } from "@/lib/calc";
 import { fmtDateUI, todayISO } from "@/lib/utils";
 import { downloadXlsx } from "@/lib/excel";
 import { resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
-import { useSession } from "@/lib/store";
 
 export default function InspectorListPage() {
   const router = useRouter();
   const muestras = useMuestras() ?? [];
-  // Grupo de especificaciones activo (ver lib/store.ts) — se actualiza solo
-  // con cada muestra guardada, para no repetir Cliente/Destino/Variedad/etc.
-  // en cada empacador consecutivo.
-  const grupo = useSession((s) => s.grupoEspecificaciones);
-  const limpiarGrupo = useSession((s) => s.setGrupoEspecificaciones);
+  // Grupos de especificaciones ("carpetas") de este inspector — ver
+  // hooks/useMuestras.ts. Reemplaza el mecanismo liviano anterior (un solo
+  // "grupo activo" en memoria) por carpetas reales que se listan acá.
+  const grupos = useGrupos() ?? [];
   // Set (no un solo id): con más de una muestra en conflicto a la vez, un
   // solo `resolvingId` compartido hacía que resolver la B (mientras la A
   // todavía estaba en curso) reactivara por error el botón de A, permitiendo
@@ -167,25 +165,58 @@ export default function InspectorListPage() {
         </div>
       )}
 
-      {/* Grupo de especificaciones activo: Cliente/Destino/Variedad/etc. que
-          va a heredar automáticamente la PRÓXIMA muestra nueva — así no hace
-          falta repetirlos para cada empacador consecutivo (Pepito, Juanito,
-          Lupe...). "Cambiar especificaciones" lo vacía: la siguiente muestra
-          nueva arranca en blanco, y en cuanto se guarde con datos nuevos,
-          ESOS pasan a ser el grupo activo (ver updateMuestra en
-          hooks/useMuestras.ts) — no hace falta "guardar" el grupo a mano. */}
-      {grupo && (grupo.cliente || grupo.destino || grupo.variedad || grupo.formato) && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-brand/20 bg-brand-soft px-3 py-2 text-xs">
-          <span className="text-ink">
-            <strong>Especificaciones activas:</strong> {[grupo.cliente, grupo.destino, grupo.variedad, grupo.formato, grupo.calibre]
-              .filter(Boolean)
-              .join(" · ") || "—"}
-          </span>
-          <Button variant="ghost" size="sm" onClick={() => limpiarGrupo(null)}>
-            Cambiar especificaciones
-          </Button>
+      {/* Grupos de especificaciones ("carpetas"): cada uno guarda Cliente/
+          Destino/Variedad/Formato/Calibre/etc. una sola vez, para no
+          repetirlos por cada empacador de la línea (~40 por jornada). Entrar
+          a una carpeta permite agregar muestras que heredan esas specs. Se
+          crea uno nuevo cuando cambia el formato/especificación (3-4 veces
+          al día) — ver /inspector/grupo/nuevo y hooks/useMuestras.ts. */}
+      <div className="mb-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink">Grupos de especificaciones</h2>
+          <Link href="/inspector/grupo/nuevo">
+            <Button variant="outline" size="sm">
+              <FolderPlus className="h-4 w-4" /> Nuevo grupo
+            </Button>
+          </Link>
         </div>
-      )}
+        {grupos.length === 0 ? (
+          <p className="rounded-md border border-dashed border-ink/15 px-3 py-2.5 text-xs text-muted">
+            Todavía no creaste ningún grupo. Creá uno cuando vayas a evaluar varios empacadores con
+            las mismas Especificaciones (Cliente/Destino/Variedad/Formato/Calibre...).
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {grupos.map((g) => {
+              const specsResumen = [
+                g.especificaciones.cliente,
+                g.especificaciones.destino,
+                g.especificaciones.variedad,
+                g.especificaciones.formato,
+                g.especificaciones.calibre,
+              ]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <Link key={g.id} href={`/inspector/grupo/${g.id}`}>
+                  <Card className="overflow-hidden transition-shadow hover:shadow-sm">
+                    <CardContent className="flex items-center gap-3 p-2.5">
+                      <Folder className="h-5 w-5 shrink-0 text-brand" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-ink">{g.nombre}</p>
+                        <p className="truncate text-xs text-muted">{specsResumen || "Sin especificaciones cargadas"}</p>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <h2 className="mb-2 text-sm font-semibold text-ink">Todas mis muestras</h2>
 
       {muestras.length === 0 ? (
         <Card>
@@ -202,6 +233,10 @@ export default function InspectorListPage() {
           {muestras.map((m) => {
             const r = computeMuestra(m);
             const enConflicto = m.sync === "conflict";
+            // La Nota mostrada prioriza la elegida a mano (notaManual); si no
+            // hay ninguna (null = todavía sin definir, incluye registros
+            // viejos previos a este campo) cae al cálculo automático.
+            const notaMostrada = m.notaManual ?? (r.cumple ? 15 : 5);
             return (
               <Card key={m.id} className="overflow-hidden transition-shadow hover:shadow-sm">
                 <Link href={`/inspector/muestra/${m.id}`}>
@@ -209,8 +244,8 @@ export default function InspectorListPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-semibold text-ink">{m.codigo}</span>
-                        <Badge variant={r.cumple ? "success" : "danger"}>
-                          {r.cumple ? "CUMPLE" : "NO CUMPLE"}
+                        <Badge variant={notaMostrada === 15 ? "success" : "danger"}>
+                          Nota {notaMostrada}
                         </Badge>
                         {m.sync === "pending" && <Badge variant="warning">sin sincronizar</Badge>}
                         {enConflicto && <Badge variant="danger">conflicto de sincronización</Badge>}

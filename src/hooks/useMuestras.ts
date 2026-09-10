@@ -14,30 +14,37 @@ import {
   deleteMuestraLocal,
   nextSeq,
   getCatalogo,
+  crearGrupoLocal,
+  listGruposLocal,
+  getGrupoLocal,
+  actualizarEspecificacionesGrupo,
 } from "@/lib/db";
 import { makeCodigo, emptyClamshell } from "@/lib/calc";
 import { todayISO, isoWeek, nowHHMM } from "@/lib/utils";
-import type { Muestra } from "@/lib/types";
-import { useSession, useAuth, extraerGrupoEspecificaciones } from "@/lib/store";
+import type { Muestra, GrupoEntry, GrupoEspecificaciones } from "@/lib/types";
+import { useSession, useAuth } from "@/lib/store";
 
 /**
- * ¿Esta muestra es de este usuario? Usada por el aislamiento por usuario de
- * abajo. No compara SOLO por uid exacto — bug real encontrado en producción
- * (Betsy: "Mis muestras" se veía vacía con muestras suyas ya cargadas):
- * createdBy no siempre quedó igual al auth.uid() actual en TODAS las
- * muestras (datos de antes de que la autenticación quedara completamente
- * cableada, o una muestra creada en el instante justo en que la sesión
- * todavía estaba resolviendo — auth.userId podía ser null por una fracción
- * de segundo). Comparar solo por uid exacto escondía esas muestras para
- * siempre, aunque fueran 100% del mismo inspector. Por eso también hace
- * fallback por el NOMBRE del perfil autenticado (m.createdBy o m.inspector
- * coincidiendo con el nombre) — cubre esos casos sin dejar de aislar entre
- * inspectores realmente distintos.
+ * ¿Este registro (muestra o grupo) es de este usuario? Usada por el
+ * aislamiento por usuario de abajo. No compara SOLO por uid exacto — bug
+ * real encontrado en producción (Betsy: "Mis muestras" se veía vacía con
+ * muestras suyas ya cargadas): createdBy no siempre quedó igual al
+ * auth.uid() actual en TODOS los registros (datos de antes de que la
+ * autenticación quedara completamente cableada, o uno creado en el instante
+ * justo en que la sesión todavía estaba resolviendo — auth.userId podía ser
+ * null por una fracción de segundo). Comparar solo por uid exacto escondía
+ * esos registros para siempre, aunque fueran 100% del mismo inspector. Por
+ * eso también hace fallback por el NOMBRE del perfil autenticado — cubre
+ * esos casos sin dejar de aislar entre inspectores realmente distintos.
  */
-export function esDelUsuarioActual(m: Muestra, userId: string | null, nombrePerfil: string | null): boolean {
+export function esDelUsuarioActual(
+  registro: { createdBy: string; inspector?: string },
+  userId: string | null,
+  nombrePerfil: string | null
+): boolean {
   if (!userId) return true; // sin sesión (modo local/demo): no se filtra
-  if (m.createdBy === userId) return true;
-  if (nombrePerfil && (m.createdBy === nombrePerfil || m.inspector === nombrePerfil)) return true;
+  if (registro.createdBy === userId) return true;
+  if (nombrePerfil && (registro.createdBy === nombrePerfil || registro.inspector === nombrePerfil)) return true;
   return false;
 }
 
@@ -71,7 +78,73 @@ export function useCatalogo(tipo: string) {
   return useLiveQuery(() => getCatalogo(tipo), [tipo], []);
 }
 
-/** Crea una nueva muestra en blanco con un clamshell inicial. */
+/**
+ * Lista de "Grupos de especificaciones" (carpetas) de este usuario — mismo
+ * aislamiento por usuario que useMuestras().
+ */
+export function useGrupos() {
+  const userId = useAuth((s) => s.userId);
+  const nombrePerfil = useAuth((s) => s.profile?.nombre ?? null);
+  return useLiveQuery(
+    async () => {
+      const all = await listGruposLocal();
+      return all.filter((g) => esDelUsuarioActual(g, userId, nombrePerfil));
+    },
+    [userId, nombrePerfil],
+    [] as GrupoEntry[]
+  );
+}
+
+export function useGrupo(id: string | undefined) {
+  return useLiveQuery(() => (id ? getGrupoLocal(id) : undefined), [id]);
+}
+
+/** Las muestras (de este usuario) que pertenecen a un grupo puntual. */
+export function useMuestrasDeGrupo(grupoId: string | undefined) {
+  const userId = useAuth((s) => s.userId);
+  const nombrePerfil = useAuth((s) => s.profile?.nombre ?? null);
+  return useLiveQuery(
+    async () => {
+      if (!grupoId) return [] as Muestra[];
+      const all = await listMuestrasLocal();
+      return all.filter((m) => m.grupoId === grupoId && esDelUsuarioActual(m, userId, nombrePerfil));
+    },
+    [grupoId, userId, nombrePerfil],
+    [] as Muestra[]
+  );
+}
+
+/**
+ * Crea un nuevo "Grupo de especificaciones" (carpeta) y lo deja como
+ * activo — la próxima "Nueva muestra" hereda sus Especificaciones. Ver
+ * GrupoEntry en lib/types.ts.
+ */
+export async function crearGrupoNuevo(especificaciones: GrupoEspecificaciones): Promise<GrupoEntry> {
+  const auth = useAuth.getState();
+  const session = useSession.getState();
+  const createdBy = auth.userId || auth.profile?.nombre || session.inspectorNombre || "inspector";
+  const grupo = await crearGrupoLocal(especificaciones, createdBy);
+  useSession.getState().setGrupoActivo(grupo.id);
+  return grupo;
+}
+
+/** Entra a un grupo YA EXISTENTE (lo marca como activo, sin crear uno nuevo). */
+export function entrarAGrupo(id: string): void {
+  useSession.getState().setGrupoActivo(id);
+}
+
+/** "Cambiar especificaciones": deja de haber grupo activo — la próxima
+ *  muestra nueva (fuera de cualquier carpeta) arranca en blanco. */
+export function salirDeGrupo(): void {
+  useSession.getState().setGrupoActivo(null);
+}
+
+/**
+ * Crea una nueva muestra en blanco con un clamshell inicial. Si hay un
+ * "Grupo de especificaciones" activo (ver lib/store.ts), hereda sus
+ * Especificaciones y queda etiquetada con `grupoId` — así el inspector solo
+ * completa Empacador/DNI/evaluación para cada empacador consecutivo.
+ */
 export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra> {
   const seq = await nextSeq("muestra");
   const id = crypto.randomUUID();
@@ -84,14 +157,13 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
   // RLS, pensadas para comparar contra el UUID de auth.uid()).
   const inspectorNombre = auth.profile?.nombre || session.inspectorNombre;
   const inspectorDni = auth.profile?.dni || session.inspectorDni;
-  // Grupo de especificaciones activo (ver lib/store.ts): si hay uno, la
-  // muestra nueva arranca con Cliente/Destino/Variedad/etc. ya cargados,
-  // así el inspector no tiene que repetirlos para cada empacador
-  // consecutivo — solo carga Personal (Inspector/Empacador/DNI) y la
-  // evaluación (clamshells). Si no hay grupo activo (recién "Cambiar
-  // especificaciones", o primera muestra del día), arranca en blanco como
-  // siempre.
-  const grupo = session.grupoEspecificaciones;
+  // Grupo de especificaciones activo: si hay uno, la muestra nueva arranca
+  // con Cliente/Destino/Variedad/etc. ya cargados — solo se carga Personal
+  // (Inspector/Empacador/DNI) y la evaluación (clamshells). Si no hay grupo
+  // activo (recién "Cambiar especificaciones", o sin ninguno todavía),
+  // arranca en blanco como siempre.
+  const grupo = session.grupoActivoId ? await getGrupoLocal(session.grupoActivoId) : undefined;
+  const specs = grupo?.especificaciones;
 
   const m: Muestra = {
     id,
@@ -109,27 +181,29 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
     horaEvaluacion: nowHHMM(),
     fechaCosecha: todayISO(),
     fechaEmpaque: todayISO(),
-    plantaEmpaque: grupo?.plantaEmpaque ?? session.plantaEmpaque,
-    linea: grupo?.linea ?? "",
-    turno: grupo?.turno ?? "DÍA",
-    productor: grupo?.productor ?? "",
-    cliente: grupo?.cliente ?? "",
-    destino: grupo?.destino ?? "",
-    variedad: grupo?.variedad ?? "",
-    formato: grupo?.formato ?? "",
-    tipoEmpaque: grupo?.tipoEmpaque ?? "",
-    calibre: grupo?.calibre ?? "",
-    embalajeCaja: grupo?.embalajeCaja ?? "",
-    embalajeClamshell: grupo?.embalajeClamshell ?? "",
-    intervaloCosecha: grupo?.intervaloCosecha ?? "",
+    plantaEmpaque: specs?.plantaEmpaque ?? session.plantaEmpaque,
+    linea: specs?.linea ?? "",
+    turno: specs?.turno ?? "DÍA",
+    productor: specs?.productor ?? "",
+    cliente: specs?.cliente ?? "",
+    destino: specs?.destino ?? "",
+    variedad: specs?.variedad ?? "",
+    formato: specs?.formato ?? "",
+    tipoEmpaque: specs?.tipoEmpaque ?? "",
+    calibre: specs?.calibre ?? "",
+    embalajeCaja: specs?.embalajeCaja ?? "",
+    embalajeClamshell: specs?.embalajeClamshell ?? "",
+    intervaloCosecha: specs?.intervaloCosecha ?? "",
     dniInspector: inspectorDni,
     inspector: inspectorNombre,
     supervisor: "",
     dniEmpacador: "",
     empacador: "",
-    pesoEstablecido: grupo?.pesoEstablecido ?? null,
+    pesoEstablecido: specs?.pesoEstablecido ?? null,
     medidaCorrectiva: "NO",
     observaciones: "",
+    notaManual: null,
+    grupoId: grupo?.id ?? null,
     clamshells: [emptyClamshell(id, 1)],
     createdAt: now,
     updatedAt: now,
@@ -147,13 +221,29 @@ export async function createMuestra(partial?: Partial<Muestra>): Promise<Muestra
 
 export async function updateMuestra(m: Muestra): Promise<void> {
   await saveMuestraLocal(m);
-  // Mantiene el "grupo de especificaciones" siempre al día con lo último
-  // editado (ver createMuestra arriba y lib/store.ts) — así la PRÓXIMA
-  // muestra nueva hereda estos mismos valores, sin que el inspector tenga
-  // que "guardar" el grupo a mano en ningún lado. Se sobrescribe en cada
-  // guardado a propósito (a diferencia del catálogo de sugerencias, acá SÍ
-  // se quiere siempre la versión más reciente, no la primera).
-  useSession.getState().setGrupoEspecificaciones(extraerGrupoEspecificaciones(m));
+  // Si esta muestra pertenece a un grupo (carpeta), sus Especificaciones
+  // quedan como la versión más reciente del grupo — así, si el inspector
+  // corrige a mano un campo de especificación acá, esa corrección también
+  // aplica a la PRÓXIMA muestra que se cree en el mismo grupo. No hace
+  // falta "guardar" el grupo a mano en ningún lado.
+  if (m.grupoId) {
+    await actualizarEspecificacionesGrupo(m.grupoId, {
+      cliente: m.cliente,
+      destino: m.destino,
+      variedad: m.variedad,
+      formato: m.formato,
+      tipoEmpaque: m.tipoEmpaque,
+      calibre: m.calibre,
+      embalajeCaja: m.embalajeCaja,
+      embalajeClamshell: m.embalajeClamshell,
+      pesoEstablecido: m.pesoEstablecido,
+      productor: m.productor,
+      plantaEmpaque: m.plantaEmpaque,
+      linea: m.linea,
+      intervaloCosecha: m.intervaloCosecha,
+      turno: m.turno,
+    });
+  }
 }
 
 export async function removeMuestra(id: string): Promise<void> {

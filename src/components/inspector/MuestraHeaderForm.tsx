@@ -326,7 +326,24 @@ export function MuestraHeaderForm({
               <option value="SI">SÍ</option>
             </Select>
           </div>
-          <div className="sm:col-span-3">
+          <div>
+            {/* Nota manual de la muestra completa — reemplaza, para mostrar en
+                la cabecera y en el reporte, al badge automático "CUMPLE"/"NO
+                CUMPLE". Solo acepta 5, 15, o en blanco (todavía sin definir,
+                cae al valor automático — ver muestra/[id]/page.tsx y
+                ReportView.tsx). No cambia el cálculo de defectos/tolerancias
+                ni la nota de cada Clamshell (cs.nota, sigue igual). */}
+            <Label>Nota</Label>
+            <Select
+              value={m.notaManual === null ? "" : String(m.notaManual)}
+              onChange={(e) => set("notaManual", e.target.value === "" ? null : parseInt(e.target.value, 10))}
+            >
+              <option value="">— (automático)</option>
+              <option value="5">5</option>
+              <option value="15">15</option>
+            </Select>
+          </div>
+          <div className="sm:col-span-2">
             <Label>Observaciones (muestra)</Label>
             <Input value={m.observaciones} placeholder="Medidas correctivas o notas al pie del reporte…" onChange={(e) => set("observaciones", e.target.value)} />
           </div>

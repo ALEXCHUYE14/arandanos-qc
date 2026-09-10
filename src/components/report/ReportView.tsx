@@ -45,6 +45,11 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
   function ReportView({ muestra: m, variant = "export" }, ref) {
     const r = computeMuestra(m);
     const cumple = r.cumple;
+    // Nota mostrada: prioriza la manual (sección Evaluación); si todavía no
+    // se puso ninguna (o es una muestra de antes de que existiera este
+    // campo), cae al veredicto automático de siempre — nunca queda en
+    // blanco ni rompe el render.
+    const notaMostrada = m.notaManual ?? (cumple ? 15 : 5);
     const isExport = variant === "export";
     // Tier de tolerancia según destino/embalaje de ESTA muestra (mismo
     // criterio que usa el cálculo, ver lib/defects.ts) — se usa para el tope
@@ -70,15 +75,15 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
             <div className="text-[15px] font-bold">
               MUESTRA: <span className="font-mono">{m.codigo}</span>
             </div>
-            {/* "Nota 15"/"Nota 5" — antes decía "CUMPLE"/"NO CUMPLE". Mismo
-                dato de siempre (r.cumple = todos los Clamshells con nota 15,
-                ver computeMuestra en lib/calc.ts), solo cambió la etiqueta. */}
+            {/* "Nota 15"/"Nota 5" — antes decía "CUMPLE"/"NO CUMPLE". Prioriza
+                la nota MANUAL de la muestra (notaMostrada arriba); si todavía
+                no se puso ninguna, cae al veredicto automático de siempre. */}
             <div
               className={`flex items-center gap-1 text-[15px] font-extrabold ${
-                cumple ? "text-[#16A34A]" : "text-[#DC2626]"
+                notaMostrada === 15 ? "text-[#16A34A]" : "text-[#DC2626]"
               }`}
             >
-              {cumple ? "✓ Nota 15" : "✗ Nota 5"}
+              {notaMostrada === 15 ? `✓ Nota ${notaMostrada}` : `✗ Nota ${notaMostrada}`}
             </div>
           </div>
           <div

@@ -8,7 +8,7 @@
  */
 
 import Dexie, { type Table } from "dexie";
-import type { Muestra } from "./types";
+import type { Muestra, GrupoEntry } from "./types";
 import { LISTA_MAESTRA } from "./listaMaestra";
 
 export interface CatalogoEntry {
@@ -41,6 +41,7 @@ class ArandanosDB extends Dexie {
   catalogos!: Table<CatalogoEntry, [string, string]>;
   seq!: Table<SeqEntry, string>;
   tombstones!: Table<TombstoneEntry, string>;
+  grupos!: Table<GrupoEntry, string>;
 
   constructor() {
     super("arandanos_qc");
@@ -54,6 +55,11 @@ class ArandanosDB extends Dexie {
     // conservan igual, solo se suma la tabla nueva (vacía) por encima.
     this.version(2).stores({
       tombstones: "id, deletedAt",
+    });
+    // v3: agrega `grupos` ("carpetas" de especificaciones) — misma migración
+    // no destructiva, solo suma la tabla nueva (vacía) por encima.
+    this.version(3).stores({
+      grupos: "id, createdBy, createdAt",
     });
   }
 }
@@ -103,6 +109,58 @@ export async function getMuestraLocal(id: string): Promise<Muestra | undefined> 
 export async function listMuestrasLocal(): Promise<Muestra[]> {
   const all = await db.muestras.toArray();
   return all.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+/**
+ * "Grupo de especificaciones" (carpeta) — ver GrupoEntry en lib/types.ts.
+ * Vive SOLO en este dispositivo (como todo lo demás en db.ts): no se
+ * sincroniza a Supabase, es puramente una ayuda de organización local para
+ * no repetir tipeo. Las Especificaciones de cada muestra igual se copian
+ * completas a la muestra en sí (ver createMuestra en hooks/useMuestras.ts),
+ * así que el reporte/export/cálculo de una muestra nunca depende de que su
+ * grupo siga existiendo.
+ */
+export async function crearGrupoLocal(especificaciones: GrupoEntry["especificaciones"], createdBy: string): Promise<GrupoEntry> {
+  const nombre =
+    [especificaciones.cliente, especificaciones.destino, especificaciones.variedad, especificaciones.formato]
+      .filter((v) => v && v.trim())
+      .join(" · ") || "Grupo sin especificar";
+  const grupo: GrupoEntry = {
+    id: crypto.randomUUID(),
+    nombre,
+    especificaciones,
+    createdAt: new Date().toISOString(),
+    createdBy,
+  };
+  await db.grupos.put(grupo);
+  return grupo;
+}
+
+export async function listGruposLocal(): Promise<GrupoEntry[]> {
+  const all = await db.grupos.toArray();
+  return all.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+export async function getGrupoLocal(id: string): Promise<GrupoEntry | undefined> {
+  return db.grupos.get(id);
+}
+
+/**
+ * Refresca las especificaciones guardadas de un grupo con las de una
+ * muestra recién editada — así, si el inspector corrige a mano un campo de
+ * especificación DENTRO de una muestra ya asignada a un grupo, esa
+ * corrección también queda para la PRÓXIMA muestra que se cree en ese
+ * mismo grupo (ver updateMuestra en hooks/useMuestras.ts). No rompe nada si
+ * el grupo ya no existe (pudo borrarse a mano, aunque hoy no hay UI para
+ * eso): sencillamente no hace nada.
+ */
+export async function actualizarEspecificacionesGrupo(
+  grupoId: string,
+  especificaciones: GrupoEntry["especificaciones"]
+): Promise<void> {
+  const grupo = await db.grupos.get(grupoId);
+  if (!grupo) return;
+  await db.grupos.put({ ...grupo, especificaciones });
 }
 
 /**
