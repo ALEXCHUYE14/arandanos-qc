@@ -36,12 +36,12 @@ export default function InspectorListPage() {
 
   /**
    * Limpia la lista de muestras de ESTE dispositivo (borrado local, con
-   * confirmación explícita — ver el modal más abajo). Las muestras que ya
-   * se sincronizaron siguen a salvo en el servidor (panel del Coordinador de
-   * Calidad); si este dispositivo vuelve a sincronizar más adelante, podrían
-   * volver a aparecer acá, porque esto NO las borra de Supabase — solo
-   * "vacía" la vista local. Se avisa de esto en el propio modal para no
-   * prometer más de lo que la acción realmente hace.
+   * confirmación explícita — ver el modal más abajo). Las que ya estaban
+   * sincronizadas siguen a salvo en el servidor (panel del Coordinador de
+   * Calidad) — esto NO las borra de Supabase, solo "vacía" la vista local.
+   * A diferencia de antes, ya NO vuelven a aparecer solas en el próximo
+   * sync automático: deleteMuestraLocal() (lib/db.ts) deja un "tombstone"
+   * por cada una, y pullAll() (lib/sync.ts) lo respeta.
    */
   async function limpiarRegistros() {
     setLimpiando(true);
@@ -186,7 +186,7 @@ export default function InspectorListPage() {
             <br />
             <br />
             Las que ya estén sincronizadas siguen a salvo en el servidor (panel del Coordinador de
-            Calidad) — si este dispositivo vuelve a sincronizar, podrían volver a aparecer acá.
+            Calidad) — no se borran de ahí, solo de esta lista, y no van a volver a aparecer acá.
           </>
         }
         confirmLabel="Sí, limpiar"

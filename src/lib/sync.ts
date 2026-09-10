@@ -199,8 +199,18 @@ export async function pullAll(): Promise<number> {
     byMuestra.set(c.muestra_id, arr);
   });
 
+  // ids que el usuario borró a propósito en ESTE dispositivo (ver
+  // deleteMuestraLocal en lib/db.ts) — sin este chequeo, el sync automático
+  // de cada 60s (ver Providers.tsx) las volvía a bajar y reponer solas a
+  // los pocos segundos de "Limpiar registros" o de borrar una muestra ya
+  // sincronizada, dando la falsa impresión de que el borrado no funcionaba.
+  // Se carga una sola vez acá (no una consulta por fila) para no volver
+  // lento el pull cuando hay muchas muestras.
+  const borradas = new Set((await db.tombstones.toArray()).map((t) => t.id));
+
   let merged = 0;
   for (const r of muestras as any[]) {
+    if (borradas.has(r.id)) continue;
     const local = await db.muestras.get(r.id);
     // No pisar cambios locales aún no sincronizados, ni un conflicto que el
     // usuario todavía no resolvió a mano.

@@ -22,10 +22,25 @@ export interface SeqEntry {
   value: number;
 }
 
+/**
+ * Registro de "esto se borró a propósito en este dispositivo" — ver
+ * deleteMuestraLocal() y su uso en sync.ts → pullAll(). Sin esto, una
+ * muestra ya sincronizada que se borra localmente reaparecía sola en el
+ * siguiente sync automático (corre cada 60s, ver Providers.tsx), porque
+ * pullAll() no tenía forma de distinguir "nunca la bajé" de "la bajé y la
+ * borré adrede" — para pullAll(), ambos casos se ven igual (no existe
+ * localmente), así que la volvía a traer del servidor.
+ */
+export interface TombstoneEntry {
+  id: string; // id de la muestra borrada
+  deletedAt: string;
+}
+
 class ArandanosDB extends Dexie {
   muestras!: Table<Muestra, string>;
   catalogos!: Table<CatalogoEntry, [string, string]>;
   seq!: Table<SeqEntry, string>;
+  tombstones!: Table<TombstoneEntry, string>;
 
   constructor() {
     super("arandanos_qc");
@@ -33,6 +48,12 @@ class ArandanosDB extends Dexie {
       muestras: "id, codigo, sync, updatedAt, empacador, semana, createdBy",
       catalogos: "[tipo+valor], tipo",
       seq: "key",
+    });
+    // v2: agrega `tombstones` sin tocar las tablas existentes — migración de
+    // Dexie no destructiva, los dispositivos que ya tenían datos los
+    // conservan igual, solo se suma la tabla nueva (vacía) por encima.
+    this.version(2).stores({
+      tombstones: "id, deletedAt",
     });
   }
 }
@@ -57,8 +78,17 @@ export async function saveMuestraLocal(m: Muestra): Promise<void> {
   await cacheCatalogosFromMuestra(m);
 }
 
+/**
+ * Borra una muestra de ESTE dispositivo. Además de borrarla, deja un
+ * "tombstone" con su id — así, si esta muestra ya estaba sincronizada con
+ * el servidor, el próximo sync automático (cada 60s) no la vuelve a bajar y
+ * reponer sola (ver pullAll() en lib/sync.ts). El registro en el servidor
+ * NO se toca: sigue existiendo ahí para Jefatura/Coordinador de Calidad —
+ * esto solo evita que reaparezca en la lista de ESTE dispositivo.
+ */
 export async function deleteMuestraLocal(id: string): Promise<void> {
   await db.muestras.delete(id);
+  await db.tombstones.put({ id, deletedAt: new Date().toISOString() });
 }
 
 export async function getMuestraLocal(id: string): Promise<Muestra | undefined> {
