@@ -127,7 +127,7 @@ export function computeClamshell(cs: Clamshell, tier: DestinoTier = "europa_usa"
 
 /** Cálculo agregado de una muestra (todos sus clamshells). */
 export function computeMuestra(m: Muestra): MuestraResult {
-  const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+  const tier = resolveDestinoTier(m.destino, m.embalajeCaja, m.cliente);
   const clamshells = (m.clamshells || []).map((cs) => computeClamshell(cs, tier));
 
   const totalBayas = clamshells.reduce((s, c) => s + c.nBayasEvaluadas, 0);
@@ -174,7 +174,7 @@ const RISK_THRESHOLD = 0.8;
 export function computeRiesgo(m: Muestra): boolean {
   const r = computeMuestra(m);
   if (!r.cumple) return false;
-  const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+  const tier = resolveDestinoTier(m.destino, m.embalajeCaja, m.cliente);
   return r.clamshells.some((cs) =>
     ROLLUP_ORDER.some((k) => {
       const tol = TOLERANCE_BY_KEY[k];

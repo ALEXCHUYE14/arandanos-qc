@@ -49,7 +49,7 @@ export const ReportView = forwardRef<HTMLDivElement, ReportViewProps>(
     // Tier de tolerancia según destino/embalaje de ESTA muestra (mismo
     // criterio que usa el cálculo, ver lib/defects.ts) — se usa para el tope
     // de cada Clasificación mostrada abajo.
-    const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+    const tier = resolveDestinoTier(m.destino, m.embalajeCaja, m.cliente);
 
     return (
       <div

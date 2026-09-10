@@ -29,11 +29,11 @@ export function ClamshellEditor({
   onChange,
 }: {
   clamshell: Clamshell;
-  muestra: Pick<Muestra, "destino" | "embalajeCaja" | "empacador">;
+  muestra: Pick<Muestra, "destino" | "embalajeCaja" | "empacador" | "cliente">;
   onChange: (cs: Clamshell) => void;
 }) {
   const [q, setQ] = useState("");
-  const tier = resolveDestinoTier(muestra.destino, muestra.embalajeCaja);
+  const tier = resolveDestinoTier(muestra.destino, muestra.embalajeCaja, muestra.cliente);
   const res = computeClamshell(clamshell, tier);
 
   const setCount = (key: string, v: number) =>

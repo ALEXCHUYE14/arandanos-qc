@@ -80,7 +80,7 @@ export function buildRowBaseDatos(
   esPrimerClamshell: boolean
 ): string[] {
   const mr = computeMuestra(m);
-  const tier = resolveDestinoTier(m.destino, m.embalajeCaja);
+  const tier = resolveDestinoTier(m.destino, m.embalajeCaja, m.cliente);
   const cr = computeClamshell(cs, tier);
 
   const row: string[] = new Array(130).fill("");

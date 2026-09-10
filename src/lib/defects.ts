@@ -44,20 +44,32 @@ export type RollupKey =
  * - "europa_usa": destino = EUROPA, o USA sin embalaje "sweetest batch".
  * - "usa_sweetest_batch": destino = USA CON embalaje caja "... SWEETEST BATCH"
  *   (ej. "DRISCOLL'S SWEETEST BATCH") — tolerancia más estricta.
+ * - "china_ozblue": destino = CHINA Y cliente = OZBLUE — excepción puntual
+ *   confirmada con el usuario (09/09/2026): OZBLUE tiene un tope más laxo
+ *   para TAMAÑO/BAJO CALIBRE en China (5% vs. 1% del resto de clientes). NO
+ *   es un nivel general: las otras 11 CLASIFICACIONES no tienen un valor
+ *   propio para "china_ozblue" (ver TOLERANCES más abajo) y toleranceMax()
+ *   cae al tope normal de China para esas — confirmado con el usuario que
+ *   el alcance es solo Tamaño, no las 12 clasificaciones.
  */
-export type DestinoTier = "china" | "europa_usa" | "usa_sweetest_batch";
+export type DestinoTier = "china" | "europa_usa" | "usa_sweetest_batch" | "china_ozblue";
 
 /**
- * Decide qué columna de tolerancia aplica según el destino y el embalaje.
- * "USA SWEETEST BATCH" no es un valor de DESTINO en la Lista Maestra del
- * cliente (los destinos válidos son CHINA / USA / EUROPA) — es una variante
- * más estricta que se activa por el embalaje caja cuando el destino es USA.
- * Ante un destino vacío o desconocido, cae en "europa_usa" (la tolerancia
+ * Decide qué columna de tolerancia aplica según el destino, el embalaje y el
+ * cliente. "USA SWEETEST BATCH" no es un valor de DESTINO en la Lista
+ * Maestra del cliente (los destinos válidos son CHINA / USA / EUROPA) — es
+ * una variante más estricta que se activa por el embalaje caja cuando el
+ * destino es USA; "china_ozblue" es análoga pero por CLIENTE en vez de
+ * embalaje, y solo más laxa para Tamaño (ver DestinoTier arriba). Ante un
+ * destino vacío o desconocido, cae en "europa_usa" (la tolerancia
  * intermedia, ni la más laxa ni la más estricta) en vez de romper el cálculo.
  */
-export function resolveDestinoTier(destino: string, embalajeCaja: string): DestinoTier {
+export function resolveDestinoTier(destino: string, embalajeCaja: string, cliente: string = ""): DestinoTier {
   const d = (destino || "").trim().toUpperCase();
-  if (d === "CHINA") return "china";
+  if (d === "CHINA") {
+    if ((cliente || "").trim().toUpperCase() === "OZBLUE") return "china_ozblue";
+    return "china";
+  }
   if (d === "USA" && /SWEETEST\s*BATCH/i.test(embalajeCaja || "")) return "usa_sweetest_batch";
   return "europa_usa";
 }
@@ -144,6 +156,13 @@ export interface ToleranceDef {
   china: number;
   europa_usa: number;
   usa_sweetest_batch: number;
+  /**
+   * Excepción China + cliente OZBLUE (ver DestinoTier). Opcional: solo
+   * "tamano" la define por ahora (confirmado con el usuario, 09/09/2026);
+   * las demás filas quedan sin este valor a propósito, y toleranceMax()
+   * cae al tope normal de "china" cuando no está definida.
+   */
+  chinaOzblue?: number;
 }
 
 export const TOLERANCES: ToleranceDef[] = [
@@ -158,7 +177,11 @@ export const TOLERANCES: ToleranceDef[] = [
   { key: "insectos", label: "INSECTOS", china: 0, europa_usa: 0, usa_sweetest_batch: 0 },
   { key: "immadurez_severa", label: "IMMADUREZ SEVERA", china: 0, europa_usa: 0, usa_sweetest_batch: 0 },
   { key: "otros_defectos_criticos", label: "OTROS DEFECTOS CRÍTICOS", china: 0, europa_usa: 0, usa_sweetest_batch: 0 },
-  { key: "tamano", label: "TAMAÑO", china: 0, europa_usa: 0, usa_sweetest_batch: 0 },
+  // Tolerancia real confirmada por el usuario (09/09/2026) — antes las 3
+  // columnas estaban en 0 (pendiente de dato). usa_sweetest_batch se deja
+  // en 0: el usuario no dio un valor nuevo para esa columna, solo para
+  // China/Europa-USA/China+OZBLUE.
+  { key: "tamano", label: "TAMAÑO", china: 0.01, europa_usa: 0.03, usa_sweetest_batch: 0, chinaOzblue: 0.05 },
 ];
 
 export const TOLERANCE_BY_KEY: Record<RollupKey, ToleranceDef> = Object.fromEntries(
@@ -167,6 +190,7 @@ export const TOLERANCE_BY_KEY: Record<RollupKey, ToleranceDef> = Object.fromEntr
 
 /** El máximo (0-1) de una tolerancia para un destino puntual. */
 export function toleranceMax(tol: ToleranceDef, tier: DestinoTier): number {
+  if (tier === "china_ozblue") return tol.chinaOzblue ?? tol.china;
   return tier === "china" ? tol.china : tier === "usa_sweetest_batch" ? tol.usa_sweetest_batch : tol.europa_usa;
 }
 
