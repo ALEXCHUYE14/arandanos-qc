@@ -147,23 +147,7 @@ export function Autocomplete({
         <ul className="absolute z-40 mt-1 hidden max-h-56 w-full overflow-y-auto rounded-md border border-line bg-surface py-1 shadow-lg sm:block">
           {filtradas.map((o, i) => (
             <li key={o.valor}>
-              <button
-                type="button"
-                // onMouseDown (no onClick) para que dispare ANTES del blur
-                // del input — si no, el blur cierra el dropdown primero y el
-                // clic en la opción se pierde.
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  elegir(o);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 truncate px-3 py-2 text-left text-sm text-ink",
-                  i === highlight ? "bg-brand/10" : "hover:bg-base"
-                )}
-              >
-                <span className="truncate">{o.valor}</span>
-                {o.valor === value && <Check className="h-4 w-4 shrink-0 text-brand" />}
-              </button>
+              <Opcion o={o} seleccionada={o.valor === value} resaltada={i === highlight} tono="claro" onElegir={elegir} />
             </li>
           ))}
         </ul>
@@ -179,6 +163,9 @@ export function Autocomplete({
           role="presentation"
         >
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={label}
             className="safe-bottom flex max-h-[80vh] w-full flex-col rounded-t-2xl bg-[#1F2430] text-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -191,22 +178,20 @@ export function Autocomplete({
                 value={value}
                 placeholder={placeholder || "Buscar o escribir…"}
                 onChange={(e) => onChangeTexto(e.target.value)}
+                // Escape también cierra acá — antes solo el <Input> de arriba
+                // lo manejaba, pero autoFocus mueve el foco a ESTE input en
+                // cuanto se abre la hoja, así que Escape no hacía nada hasta
+                // este fix (había que tocar el fondo o "Listo" a mano).
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setOpen(false);
+                }}
                 className="w-full rounded-md border border-white/15 bg-white/10 px-3 py-2.5 text-[15px] text-white placeholder-white/40 outline-none focus:border-white/30"
               />
             </div>
             <ul className="flex-1 overflow-y-auto py-1">
               {filtradas.map((o) => (
                 <li key={o.valor}>
-                  <button
-                    type="button"
-                    onClick={() => elegir(o)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-[15px] active:bg-white/10"
-                  >
-                    <span className="truncate">{o.valor}</span>
-                    {/* Blanco (no text-brand): el azul del tema es para fondos
-                        claros, acá el fondo es oscuro y perdía contraste. */}
-                    {o.valor === value && <Check className="h-5 w-5 shrink-0 text-white" />}
-                  </button>
+                  <Opcion o={o} seleccionada={o.valor === value} resaltada={false} tono="oscuro" onElegir={elegir} />
                 </li>
               ))}
               {filtradas.length === 0 && (
@@ -230,5 +215,61 @@ export function Autocomplete({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Una fila de opción — la misma para el desplegable de escritorio y la hoja
+ * de celular (evita mantener dos copias del JSX que puedan divergir; el
+ * color del check ya había tenido que ajustarse a mano una vez por esto).
+ * Declarado FUERA de Autocomplete (no como función anidada) para que React
+ * lo trate como el mismo componente entre renders, en vez de recrearlo y
+ * desmontar/montar cada botón de nuevo en cada tecla.
+ */
+function Opcion({
+  o,
+  seleccionada,
+  resaltada,
+  tono,
+  onElegir,
+}: {
+  o: { valor: string; extra?: string };
+  seleccionada: boolean;
+  resaltada: boolean;
+  tono: "claro" | "oscuro";
+  onElegir: (o: { valor: string; extra?: string }) => void;
+}) {
+  return (
+    <button
+      type="button"
+      // onMouseDown (no onClick) en las dos variantes: dispara ANTES del
+      // blur del campo enfocado (el <Input> de arriba en escritorio, el
+      // buscador propio de la hoja en celular). Sin esto, ese blur puede
+      // cerrar el teclado y reacomodar la pantalla ANTES de que el toque
+      // se registre, y el toque cae en la fila equivocada — el mismo riesgo
+      // que ya evitaba la lista de escritorio, ahora también en la hoja.
+      onMouseDown={(e) => {
+        e.preventDefault();
+        onElegir(o);
+      }}
+      className={
+        tono === "claro"
+          ? cn(
+              "flex w-full items-center justify-between gap-2 truncate px-3 py-2 text-left text-sm text-ink",
+              resaltada ? "bg-brand/10" : "hover:bg-base"
+            )
+          : "flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-[15px] active:bg-white/10"
+      }
+    >
+      <span className="truncate">{o.valor}</span>
+      {seleccionada &&
+        (tono === "claro" ? (
+          <Check className="h-4 w-4 shrink-0 text-brand" />
+        ) : (
+          // Blanco (no text-brand): el azul del tema es para fondos claros,
+          // acá el fondo es oscuro y perdía contraste.
+          <Check className="h-5 w-5 shrink-0 text-white" />
+        ))}
+    </button>
   );
 }
