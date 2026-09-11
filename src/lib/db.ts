@@ -146,6 +146,20 @@ export async function getGrupoLocal(id: string): Promise<GrupoEntry | undefined>
 }
 
 /**
+ * Elimina un Grupo de especificaciones (carpeta) de ESTE dispositivo. Solo
+ * borra el grupo en sí, nunca las muestras que ya se hayan creado dentro de
+ * él: cada muestra guarda su propia copia completa de las Especificaciones
+ * (ver createMuestra en hooks/useMuestras.ts), así que no depende de que el
+ * grupo siga existiendo — sus reportes/cálculos no se ven afectados. Si
+ * alguna muestra vieja todavía apunta a este grupoId, simplemente deja de
+ * poder "verse" desde una carpeta (getGrupoLocal devuelve undefined), lo
+ * cual ya está contemplado en /inspector/grupo/[id]/page.tsx.
+ */
+export async function eliminarGrupoLocal(id: string): Promise<void> {
+  await db.grupos.delete(id);
+}
+
+/**
  * Refresca las especificaciones guardadas de un grupo con las de una
  * muestra recién editada — así, si el inspector corrige a mano un campo de
  * especificación DENTRO de una muestra ya asignada a un grupo, esa

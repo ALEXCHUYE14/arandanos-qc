@@ -9,7 +9,7 @@
  * de la línea, sin repetir las Especificaciones cada vez.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, FolderPlus } from "lucide-react";
@@ -42,21 +42,37 @@ export default function NuevoGrupoPage() {
   const [specs, setSpecs] = useState<GrupoEspecificaciones>(VACIO);
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Traba de verdad (no el estado `creando` de arriba, que solo maneja el
+  // texto del botón): un `ref` cambia de valor al instante, en el mismo
+  // tick — así, si dos toques llegan pegados (antes de que React vuelva a
+  // pintar el botón ya deshabilitado), el segundo todavía ve la traba en
+  // `true` y se corta acá, sin llegar a crear un grupo de más.
+  const creandoRef = useRef(false);
 
   const set = <K extends keyof GrupoEspecificaciones>(k: K, v: GrupoEspecificaciones[K]) =>
     setSpecs((prev) => ({ ...prev, [k]: v }));
 
   async function crear() {
-    if (creando) return;
+    if (creandoRef.current) return;
+    creandoRef.current = true;
     setCreando(true);
     setError(null);
     try {
       const grupo = await crearGrupoNuevo(specs);
       router.push(`/inspector/grupo/${grupo.id}`);
+      // A propósito NO se libera la traba acá: recién se creó el grupo y ya
+      // se disparó la navegación de salida. Este era el bug real ("puse 1
+      // especificación y se repite"): antes, un `finally` volvía a habilitar
+      // el botón de inmediato, mientras la navegación todavía estaba en
+      // curso — un segundo toque en esa breve ventana (típico si la pantalla
+      // tarda un instante en cambiar) volvía a ejecutar crear() con las
+      // MISMAS especificaciones todavía cargadas en el formulario, armando
+      // un grupo duplicado. Si la navegación fallara igual se queda en esta
+      // pantalla con el botón deshabilitado — mejor eso que duplicar.
     } catch (err) {
       console.error("[Nuevo grupo] no se pudo crear", err);
       setError("No se pudo crear el grupo. Probá de nuevo.");
-    } finally {
+      creandoRef.current = false;
       setCreando(false);
     }
   }

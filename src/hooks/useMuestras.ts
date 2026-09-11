@@ -18,6 +18,7 @@ import {
   listGruposLocal,
   getGrupoLocal,
   actualizarEspecificacionesGrupo,
+  eliminarGrupoLocal,
 } from "@/lib/db";
 import { makeCodigo, emptyClamshell } from "@/lib/calc";
 import { todayISO, isoWeek, nowHHMM } from "@/lib/utils";
@@ -137,6 +138,21 @@ export function entrarAGrupo(id: string): void {
  *  muestra nueva (fuera de cualquier carpeta) arranca en blanco. */
 export function salirDeGrupo(): void {
   useSession.getState().setGrupoActivo(null);
+}
+
+/**
+ * Elimina un Grupo de especificaciones (carpeta) — por ejemplo, uno creado
+ * de más por error o por un doble toque accidental. Si era el grupo activo
+ * en este dispositivo, también lo "saca" de la sesión (si no, una "Nueva
+ * muestra" posterior seguiría intentando heredar las specs de un grupo que
+ * ya no existe — getGrupoLocal() ya lo maneja sin romper, pero es más
+ * prolijo dejarlo limpio).
+ */
+export async function eliminarGrupo(id: string): Promise<void> {
+  await eliminarGrupoLocal(id);
+  if (useSession.getState().grupoActivoId === id) {
+    useSession.getState().setGrupoActivo(null);
+  }
 }
 
 /**

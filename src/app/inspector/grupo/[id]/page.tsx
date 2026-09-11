@@ -8,14 +8,15 @@
  * el inspector solo completa Empacador/DNI/evaluación.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ClipboardList, Plus } from "lucide-react";
+import { ArrowLeft, ChevronRight, ClipboardList, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { useGrupo, useMuestrasDeGrupo, createMuestra, entrarAGrupo } from "@/hooks/useMuestras";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useGrupo, useMuestrasDeGrupo, createMuestra, entrarAGrupo, eliminarGrupo } from "@/hooks/useMuestras";
 import { computeMuestra } from "@/lib/calc";
 import { fmtDateUI } from "@/lib/utils";
 
@@ -26,20 +27,47 @@ export default function GrupoDetallePage() {
   const muestras = useMuestrasDeGrupo(id) ?? [];
   const [creando, setCreando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Traba de verdad, no solo el estado `creando` (ver la explicación
+  // completa en /inspector/grupo/nuevo/page.tsx): evita que un segundo toque
+  // durante la navegación de salida dispare una segunda creación.
+  const creandoRef = useRef(false);
 
   async function nueva() {
-    if (creando) return;
+    if (creandoRef.current) return;
+    creandoRef.current = true;
     setCreando(true);
     setError(null);
     try {
       entrarAGrupo(id); // por si el inspector venía de otro grupo/sin ninguno
       const m = await createMuestra();
       router.push(`/inspector/muestra/${m.id}`);
+      // No se libera la traba a propósito: ya se está navegando afuera.
     } catch (err) {
       console.error("[Nueva muestra en grupo] no se pudo crear", err);
       setError("No se pudo crear la muestra. Probá de nuevo.");
-    } finally {
+      creandoRef.current = false;
       setCreando(false);
+    }
+  }
+
+  // Eliminar este grupo desde su propia pantalla de detalle — no borra las
+  // muestras ya cargadas dentro (ver eliminarGrupoLocal en lib/db.ts), y
+  // vuelve a "Mis muestras" al terminar.
+  const [confirmEliminar, setConfirmEliminar] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  async function eliminar() {
+    if (!id) return;
+    setEliminando(true);
+    setErrorEliminar(null);
+    try {
+      await eliminarGrupo(id);
+      router.push("/inspector");
+    } catch (err) {
+      console.error("[grupo] no se pudo eliminar", err);
+      setErrorEliminar("No se pudo eliminar el grupo. Probá de nuevo.");
+      setEliminando(false);
     }
   }
 
@@ -72,11 +100,24 @@ export default function GrupoDetallePage() {
 
   return (
     <main className="px-4 py-4 pb-24">
-      <div className="mb-3">
-        <Link href="/inspector" className="mb-1 flex items-center gap-1 text-xs text-muted hover:text-ink">
-          <ArrowLeft className="h-4 w-4" /> Mis muestras
-        </Link>
-        <h1 className="text-xl font-bold text-ink">{grupo.nombre}</h1>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <Link href="/inspector" className="mb-1 flex items-center gap-1 text-xs text-muted hover:text-ink">
+            <ArrowLeft className="h-4 w-4" /> Mis muestras
+          </Link>
+          <h1 className="truncate text-xl font-bold text-ink">{grupo.nombre}</h1>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="shrink-0 text-danger"
+          onClick={() => {
+            setErrorEliminar(null);
+            setConfirmEliminar(true);
+          }}
+        >
+          <Trash2 className="h-4 w-4" /> Eliminar grupo
+        </Button>
       </div>
 
       {resumenSpecs.length > 0 && (
@@ -143,6 +184,27 @@ export default function GrupoDetallePage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmEliminar}
+        title="¿Eliminar este grupo?"
+        description={
+          <>
+            Se va a eliminar la carpeta <strong>{grupo.nombre}</strong>. Las{" "}
+            <strong>{muestras.length}</strong> muestra(s) ya cargada(s) dentro NO se borran — quedan
+            intactas en &quot;Todas mis muestras&quot;, cada una con su propia copia de las Especificaciones.
+            {errorEliminar && (
+              <p className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs font-medium text-danger">
+                {errorEliminar}
+              </p>
+            )}
+          </>
+        }
+        confirmLabel="Sí, eliminar"
+        busy={eliminando}
+        onConfirm={eliminar}
+        onCancel={() => setConfirmEliminar(false)}
+      />
     </main>
   );
 }

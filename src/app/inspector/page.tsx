@@ -2,17 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus, ChevronRight, Home, ClipboardList, AlertTriangle, FileSpreadsheet, Trash2, FolderPlus, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { useMuestras, useGrupos, createMuestra, removeMuestra } from "@/hooks/useMuestras";
+import { useMuestras, useGrupos, createMuestra, removeMuestra, eliminarGrupo } from "@/hooks/useMuestras";
 import { computeMuestra } from "@/lib/calc";
 import { fmtDateUI, todayISO } from "@/lib/utils";
 import { downloadXlsx } from "@/lib/excel";
 import { resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
+import type { GrupoEntry } from "@/lib/types";
 
 export default function InspectorListPage() {
   const router = useRouter();
@@ -38,18 +39,27 @@ export default function InspectorListPage() {
   // botón simplemente no parecía hacer nada.
   const [creandoMuestra, setCreandoMuestra] = useState(false);
   const [errorNueva, setErrorNueva] = useState<string | null>(null);
+  // Traba de verdad (ver el mismo patrón, con la explicación completa, en
+  // /inspector/grupo/nuevo/page.tsx): un `ref` corta un segundo toque
+  // disparado en el instante entre "ya se creó" y "ya se navegó a la nueva
+  // pantalla", que el estado `creandoMuestra` solo (por sí mismo) no
+  // alcanzaba a evitar — antes eso podía crear dos muestras en blanco.
+  const creandoRef = useRef(false);
 
   async function nueva() {
-    if (creandoMuestra) return;
+    if (creandoRef.current) return;
+    creandoRef.current = true;
     setCreandoMuestra(true);
     setErrorNueva(null);
     try {
       const m = await createMuestra();
       router.push(`/inspector/muestra/${m.id}`);
+      // No se libera la traba acá a propósito: ya se está navegando fuera de
+      // esta pantalla (ver comentario en grupo/nuevo/page.tsx).
     } catch (err) {
       console.error("[Nueva muestra] no se pudo crear", err);
       setErrorNueva("No se pudo crear la muestra. Probá de nuevo.");
-    } finally {
+      creandoRef.current = false;
       setCreandoMuestra(false);
     }
   }
@@ -122,6 +132,31 @@ export default function InspectorListPage() {
       console.error("[conflicto] no se pudo traer la versión del servidor", e);
     } finally {
       marcarResolviendo(id, false);
+    }
+  }
+
+  // Eliminar un Grupo de especificaciones (carpeta) — pedido explícito del
+  // cliente: "falta una opción que permita eliminar una especificación",
+  // por ejemplo para borrar los duplicados que dejó el bug del doble-toque
+  // (ver arriba). Solo borra el grupo, nunca las muestras ya creadas dentro
+  // (ver eliminarGrupoLocal en lib/db.ts) — por eso no hace falta avisar de
+  // pérdida de datos en el modal, a diferencia de "Limpiar registros".
+  const [grupoAEliminar, setGrupoAEliminar] = useState<GrupoEntry | null>(null);
+  const [eliminandoGrupo, setEliminandoGrupo] = useState(false);
+  const [errorEliminarGrupo, setErrorEliminarGrupo] = useState<string | null>(null);
+
+  async function confirmarEliminarGrupo() {
+    if (!grupoAEliminar) return;
+    setEliminandoGrupo(true);
+    setErrorEliminarGrupo(null);
+    try {
+      await eliminarGrupo(grupoAEliminar.id);
+      setGrupoAEliminar(null);
+    } catch (e) {
+      console.error("[grupo] no se pudo eliminar", e);
+      setErrorEliminarGrupo("No se pudo eliminar el grupo. Probá de nuevo.");
+    } finally {
+      setEliminandoGrupo(false);
     }
   }
 
@@ -198,18 +233,36 @@ export default function InspectorListPage() {
                 .filter(Boolean)
                 .join(" · ");
               return (
-                <Link key={g.id} href={`/inspector/grupo/${g.id}`}>
-                  <Card className="overflow-hidden transition-shadow hover:shadow-sm">
-                    <CardContent className="flex items-center gap-3 p-2.5">
+                <Card key={g.id} className="overflow-hidden transition-shadow hover:shadow-sm">
+                  {/* El botón de eliminar queda FUERA del Link (no anidado
+                      adentro) — un <button> dentro de un <a> es HTML
+                      inválido y en la práctica el navegador no deja tocar
+                      solo el botón sin disparar también la navegación. */}
+                  <div className="flex items-center gap-1 p-2.5">
+                    <Link
+                      href={`/inspector/grupo/${g.id}`}
+                      className="flex min-w-0 flex-1 items-center gap-3"
+                    >
                       <Folder className="h-5 w-5 shrink-0 text-brand" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-ink">{g.nombre}</p>
                         <p className="truncate text-xs text-muted">{specsResumen || "Sin especificaciones cargadas"}</p>
                       </div>
                       <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
-                    </CardContent>
-                  </Card>
-                </Link>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorEliminarGrupo(null);
+                        setGrupoAEliminar(g);
+                      }}
+                      className="shrink-0 rounded-md p-1.5 text-muted hover:bg-danger/10 hover:text-danger"
+                      aria-label={`Eliminar grupo ${g.nombre}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </Card>
               );
             })}
           </div>
@@ -317,6 +370,27 @@ export default function InspectorListPage() {
         busy={limpiando}
         onConfirm={limpiarRegistros}
         onCancel={() => setConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={grupoAEliminar !== null}
+        title="¿Eliminar este grupo?"
+        description={
+          <>
+            Se va a eliminar la carpeta <strong>{grupoAEliminar?.nombre}</strong>. Las muestras que
+            ya hayas cargado dentro de ella NO se borran — quedan intactas en &quot;Todas mis
+            muestras&quot;, cada una con su propia copia de las Especificaciones.
+            {errorEliminarGrupo && (
+              <p className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs font-medium text-danger">
+                {errorEliminarGrupo}
+              </p>
+            )}
+          </>
+        }
+        confirmLabel="Sí, eliminar"
+        busy={eliminandoGrupo}
+        onConfirm={confirmarEliminarGrupo}
+        onCancel={() => setGrupoAEliminar(null)}
       />
     </main>
   );
