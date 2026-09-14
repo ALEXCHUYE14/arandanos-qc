@@ -16,6 +16,7 @@ import {
   TrendingUp,
   TrendingDown,
   Users,
+  UserCog,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -163,6 +164,11 @@ export default function DashboardPage() {
               <Link href="/dashboard/usuarios">
                 <Button variant="outline" size="sm">
                   <Users className="h-4 w-4" /> Usuarios
+                </Button>
+              </Link>
+              <Link href="/dashboard/empacadores">
+                <Button variant="outline" size="sm">
+                  <UserCog className="h-4 w-4" /> Empacadores
                 </Button>
               </Link>
               <Button variant="outline" size="sm" onClick={sincronizar} disabled={syncing}>

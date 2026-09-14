@@ -237,10 +237,52 @@ export async function pullAll(): Promise<number> {
   return merged;
 }
 
-/** Sincronización completa (push + pull). */
+/**
+ * Sincroniza el catálogo LOCAL de empacadores (tipo "empacador" en
+ * db.catalogos, usado por el autocompletado y por el cruce DNI→nombre) con
+ * la tabla public.empacadores de Supabase — administrada por Jefatura desde
+ * /dashboard/empacadores. A diferencia de pullAll()/pushPending() (que
+ * mezclan sin borrar nada que no venga del servidor), esto REEMPLAZA por
+ * completo la lista local de "empacador": el servidor pasa a ser la única
+ * fuente de verdad para este catálogo, así que cualquier entrada local
+ * vieja/de prueba que ya no esté ahí (o que se haya dado de baja) también
+ * desaparece sola en cada ciclo — sin depender de comparar contra la lista
+ * estática del Excel (ver el comentario grande en seedListaMaestra(), en
+ * lib/db.ts, sobre por qué "empacador" dejó de limpiarse así cuando hay
+ * backend configurado).
+ *
+ * Solo trae empacadores con `activo = true` — dar de baja a alguien (dejó
+ * la empresa) hace que deje de sugerirse, pero ninguna muestra ya cargada
+ * con su nombre se toca (ese campo es texto libre, copiado en el momento
+ * de crear la muestra — no depende de que esta fila siga existiendo).
+ *
+ * Si el pedido falla (sin señal, error de red), NO borra nada localmente —
+ * primero se confirma la lista nueva completa, recién ahí se reemplaza; se
+ * reintenta solo en el próximo ciclo (cada 60s, ver Providers.tsx).
+ */
+export async function syncEmpacadoresFromServer(): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) return;
+  const { data, error } = await withRetry(() =>
+    supabase!.from("empacadores").select("dni, nombre").eq("activo", true)
+  );
+  if (error || !data) return;
+
+  const entries = data.map((e: { dni: string; nombre: string }) => ({
+    tipo: "empacador",
+    valor: e.nombre,
+    extra: e.dni,
+  }));
+  await db.transaction("rw", db.catalogos, async () => {
+    await db.catalogos.where("tipo").equals("empacador").delete();
+    await db.catalogos.bulkPut(entries);
+  });
+}
+
+/** Sincronización completa (push + pull + catálogo de empacadores). */
 export async function fullSync(): Promise<{ pushed: number; pulled: number; failed: number; conflicts: number }> {
   const { ok, fail, conflict } = await pushPending();
   const pulled = await pullAll();
+  await syncEmpacadoresFromServer();
   return { pushed: ok, pulled, failed: fail, conflicts: conflict };
 }
 

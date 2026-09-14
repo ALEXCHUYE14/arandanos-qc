@@ -11,6 +11,15 @@ import Dexie, { type Table } from "dexie";
 import type { Muestra, GrupoEntry } from "./types";
 import { LISTA_MAESTRA } from "./listaMaestra";
 
+// Chequeo liviano — a propósito NO se importa `isSupabaseConfigured` desde
+// "./supabase": ese módulo arrastra todo el SDK de @supabase/ssr al bundle
+// de CADA página que toque db.ts (que es prácticamente todas), solo para
+// leer un booleano. Mismo patrón ya usado en
+// app/inspector/muestra/[id]/page.tsx por el mismo motivo.
+const isSupabaseConfigured = Boolean(
+  process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+);
+
 export interface CatalogoEntry {
   tipo: string; // 'inspector' | 'empacador' | 'supervisor' | 'cliente' | ...
   valor: string;
@@ -340,10 +349,24 @@ export async function seedListaMaestra(): Promise<void> {
     "inspector",
     LISTA_MAESTRA.inspectores.map((i) => i.nombre)
   );
-  await limpiarCatalogoNoOficial(
-    "empacador",
-    LISTA_MAESTRA.empacadores.map((e) => e.nombre)
-  );
+
+  // "empacador" YA NO es un catálogo cerrado contra esta lista estática del
+  // Excel cuando hay backend: Jefatura lo administra desde
+  // /dashboard/empacadores (tabla public.empacadores en Supabase), y el
+  // personal rota ~2 veces por semana — comparar contra esta lista fija
+  // borraría cualquier empacador agregado de verdad que no estuviera acá.
+  // syncEmpacadoresFromServer() (lib/sync.ts) ya reemplaza el catálogo local
+  // completo con lo que diga el servidor en cada ciclo, así que cualquier
+  // sugerencia local vieja/de prueba se termina limpiando sola igual, sin
+  // necesitar esta comparación. Sin backend (modo local/demo, sin forma de
+  // que nadie administre nada desde la nube) sigue siendo un catálogo
+  // cerrado, como todos los demás de arriba.
+  if (!isSupabaseConfigured) {
+    await limpiarCatalogoNoOficial(
+      "empacador",
+      LISTA_MAESTRA.empacadores.map((e) => e.nombre)
+    );
+  }
 }
 
 /**

@@ -181,7 +181,42 @@ insert into public.defect_catalog (key, label, category) values
 on conflict (key) do update set label = excluded.label, category = excluded.category;
 
 -- =====================================================================
---  updated_at automático en muestras
+--  EMPACADORES (catálogo administrado por Jefatura/Coordinador de Calidad)
+--
+--  Antes, la lista de empacadores (nombre + DNI, para el autocompletado y
+--  el cruce DNI→nombre) venía SOLO del Excel de referencia, embebida en el
+--  código (lib/listaMaestra.ts) — agregar o dar de baja un empacador
+--  implicaba que el desarrollador editara y redesplegara el código. El
+--  personal de línea rota seguido (~2 veces por semana), así que esta
+--  tabla la reemplaza como fuente de verdad: Jefatura la administra desde
+--  /dashboard/empacadores y el cambio llega solo (sin redeploy) a todos los
+--  dispositivos en el próximo sync (ver syncEmpacadoresFromServer en
+--  lib/sync.ts, y limpiarCatalogoNoOficial/seedListaMaestra en lib/db.ts
+--  para el porqué de que "empacador" ya no se limpia contra la lista
+--  estática del Excel cuando hay backend configurado).
+--
+--  `dni` como llave primaria (no un id separado): un DNI es único por
+--  persona, así que "agregar" el mismo DNI de nuevo actualiza el nombre en
+--  vez de crear un duplicado — por diseño, no hay forma de terminar con dos
+--  filas para la misma persona.
+--
+--  `activo`: baja LÓGICA (nunca DELETE) — si alguien deja la empresa, deja
+--  de sugerirse en el autocompletado, pero las muestras YA cargadas con su
+--  nombre no se tocan (el campo `empacador` de una muestra es texto libre,
+--  copiado en el momento — no depende de que esta fila siga existiendo).
+-- =====================================================================
+create table if not exists public.empacadores (
+  dni        text primary key check (dni ~ '^[0-9]{6,12}$'),
+  nombre     text not null check (length(trim(nombre)) > 0),
+  activo     boolean not null default true,
+  created_at timestamptz not null default now(),
+  created_by uuid references auth.users(id) on delete set null,
+  updated_at timestamptz not null default now()
+);
+
+-- =====================================================================
+--  updated_at automático en muestras (y en empacadores, ver abajo — la
+--  función se define UNA vez y se reutiliza en ambos triggers).
 -- =====================================================================
 create or replace function public.touch_updated_at()
 returns trigger language plpgsql as $$
@@ -190,6 +225,11 @@ begin new.updated_at = now(); return new; end; $$;
 drop trigger if exists trg_muestras_touch on public.muestras;
 create trigger trg_muestras_touch
   before update on public.muestras
+  for each row execute function public.touch_updated_at();
+
+drop trigger if exists trg_empacadores_touch on public.empacadores;
+create trigger trg_empacadores_touch
+  before update on public.empacadores
   for each row execute function public.touch_updated_at();
 
 -- =====================================================================
@@ -400,6 +440,7 @@ alter table public.profiles    enable row level security;
 alter table public.muestras    enable row level security;
 alter table public.clamshells  enable row level security;
 alter table public.defect_catalog enable row level security;
+alter table public.empacadores enable row level security;
 
 -- profiles: cada quien ve/edita su propio perfil; jefatura ve todos.
 drop policy if exists profiles_select on public.profiles;
@@ -437,6 +478,19 @@ create trigger trg_profiles_protect_rol
 drop policy if exists defcat_select on public.defect_catalog;
 create policy defcat_select on public.defect_catalog
   for select to authenticated using (true);
+
+-- empacadores: lectura para cualquier autenticado (todos los inspectores
+-- necesitan ver la lista completa para el autocompletado); alta/baja/edición
+-- solo Jefatura — un inspector de línea no puede agregarse "empacadores"
+-- por su cuenta desde la app.
+drop policy if exists empacadores_select on public.empacadores;
+create policy empacadores_select on public.empacadores
+  for select to authenticated using (true);
+drop policy if exists empacadores_write on public.empacadores;
+create policy empacadores_write on public.empacadores
+  for all to authenticated
+  using (public.is_jefatura())
+  with check (public.is_jefatura());
 
 -- muestras: lectura para todo autenticado; escritura por el creador o jefatura.
 drop policy if exists muestras_select on public.muestras;
