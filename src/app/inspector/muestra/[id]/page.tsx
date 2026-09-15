@@ -32,17 +32,67 @@ export default function CapturaPage() {
   const [tab, setTab] = useState<"datos" | number>("datos"); // number = índice de clamshell
   const [copied, setCopied] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Ref espejo de `draft`, actualizada en CADA render (no solo dentro de un
+  // efecto) — la necesita flushSave() de abajo para leer siempre el valor
+  // más fresco sin depender de que el listener de visibilitychange/pagehide
+  // haya sido re-creado con el último `draft` en su clausura.
+  const draftRef = useRef<Muestra | null>(null);
+  draftRef.current = draft;
 
   // Carga inicial del borrador desde el registro almacenado.
   useEffect(() => {
     if (stored && !draft) setDraft(stored);
   }, [stored, draft]);
 
-  // Autosave con debounce.
+  // Autosave con debounce (400ms) — pero el guardado en sí queda PENDIENTE
+  // en un simple setTimeout del navegador hasta que se cumple ese plazo.
+  // Bug real reportado por el cliente: un inspector terminaba de cargar los
+  // 14 clamshells de un empacador y, si bloqueaba la pantalla o cambiaba de
+  // app justo después del último toque, el celular podía suspender ese
+  // temporizador antes de que llegara a dispararse — esa última tanda de
+  // datos nunca se escribía en IndexedDB, y la muestra quedaba con menos
+  // información de la que el inspector realmente cargó (de ahí el "4% de
+  // descarte" que después aparecía en 0%: literalmente no se había guardado
+  // el conteo de defectos). flushSave() + los listeners de abajo fuerzan el
+  // guardado INMEDIATO (sin esperar los 400ms) apenas la pestaña deja de
+  // estar visible o la página se va a cerrar — así el último cambio queda a
+  // salvo pase lo que pase con el temporizador.
+  function flushSave() {
+    if (!saveTimer.current) return; // no hay nada pendiente: ya se guardó
+    clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    if (draftRef.current) updateMuestra(draftRef.current);
+  }
+
+  useEffect(() => {
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") flushSave();
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    // "pagehide" (no "beforeunload"): dispara de forma confiable en
+    // navegadores móviles también cuando la página pasa a la caché de
+    // retroceso (bfcache) o la pestaña se cierra, a diferencia de
+    // beforeunload, que en varios navegadores móviles no llega a correr.
+    window.addEventListener("pagehide", flushSave);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", flushSave);
+      // También al desmontar por navegación DENTRO de la app (ej. tocar
+      // "Muestras" o "Ver reporte" antes de que pasen los 400ms) — el
+      // temporizador seguiría corriendo solo igual, pero flushear acá
+      // adelanta el guardado sin depender de que el navegador no lo mate.
+      flushSave();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   function patch(next: Muestra) {
     setDraft(next);
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => updateMuestra(next), 400);
+    saveTimer.current = setTimeout(() => {
+      saveTimer.current = null;
+      updateMuestra(next);
+    }, 400);
   }
 
   if (!draft) {
