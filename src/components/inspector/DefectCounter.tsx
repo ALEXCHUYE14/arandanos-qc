@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, Plus } from "lucide-react";
+import { NumberInput } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DefectDef } from "@/lib/defects";
 
@@ -50,16 +51,15 @@ export function DefectCounter({
         <Minus className="h-5 w-5" />
       </button>
 
-      <input
-        type="number"
-        inputMode="numeric"
+      {/* NumberInput (no un <input> directo): evita que, al borrar el campo
+          para corregir el número, se confirme un "0" intermedio como si
+          fuera el conteo final — ver el bug real que esto corrige en
+          components/ui/input.tsx. */}
+      <NumberInput
         min={0}
-        value={value === 0 ? "" : value}
+        value={value}
+        onCommit={onChange}
         placeholder="0"
-        onChange={(e) => {
-          const n = parseInt(e.target.value, 10);
-          onChange(Number.isFinite(n) && n >= 0 ? n : 0);
-        }}
         className="no-spin h-10 w-12 shrink-0 rounded-md border border-line bg-surface text-center text-base font-semibold text-ink focus:outline-none focus:ring-2 focus:ring-brand"
       />
 

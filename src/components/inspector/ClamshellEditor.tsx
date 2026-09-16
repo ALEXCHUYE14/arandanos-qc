@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Search, CheckCircle2, XCircle } from "lucide-react";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, NumberInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { DefectCounter } from "./DefectCounter";
 import { APROVECHABLES, DESCARTES, ROLLUP_ORDER, ROLLUP_LABEL, toleranceMax, TOLERANCE_BY_KEY, type DefectDef, type RollupKey } from "@/lib/defects";
@@ -61,12 +61,16 @@ export function ClamshellEditor({
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
           <Label>N° bayas evaluadas</Label>
-          <Input
-            type="number"
-            inputMode="numeric"
+          {/* NumberInput (no <Input> directo): evita que, al borrar el campo
+              para corregirlo, se confirme un "0" intermedio — ver el bug
+              real que esto corrige en components/ui/input.tsx. min={1}
+              porque 0 bayas evaluadas no tiene sentido para una inspección
+              real (a diferencia de un conteo de defecto, que sí puede ser 0). */}
+          <NumberInput
             className="no-spin"
-            value={clamshell.nBayasEvaluadas || ""}
-            onChange={(e) => setBayas(parseInt(e.target.value, 10) || 0)}
+            min={1}
+            value={clamshell.nBayasEvaluadas}
+            onCommit={setBayas}
           />
         </div>
         <div>
