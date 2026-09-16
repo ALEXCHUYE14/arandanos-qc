@@ -301,6 +301,12 @@ export default function InspectorListPage() {
                           Nota {notaMostrada}
                         </Badge>
                         {m.sync === "pending" && <Badge variant="warning">sin sincronizar</Badge>}
+                        {/* "error" es distinto de "pending": ya se intentó subir y FALLÓ (red,
+                            RLS, etc.) — antes no tenía ningún aviso propio y se veía igual que
+                            una muestra recién creada, sin forma de notar que algo no estaba
+                            llegando al servidor. Se sigue reintentando solo (ver pushPending()
+                            en lib/sync.ts), pero este aviso avisa mientras tanto. */}
+                        {m.sync === "error" && <Badge variant="danger">no se pudo sincronizar — reintentando</Badge>}
                         {enConflicto && <Badge variant="danger">conflicto de sincronización</Badge>}
                       </div>
                       <p className="mt-0.5 truncate text-xs text-muted">

@@ -166,6 +166,8 @@ export default function GrupoDetallePage() {
                           Nota {notaMostrada}
                         </Badge>
                         {m.sync === "pending" && <Badge variant="warning">sin sincronizar</Badge>}
+                        {/* Ver el mismo aviso, con la explicación completa, en /inspector/page.tsx */}
+                        {m.sync === "error" && <Badge variant="danger">no se pudo sincronizar — reintentando</Badge>}
                       </div>
                       <p className="mt-0.5 truncate text-xs text-muted">
                         {m.empacador || "Sin empacador"} · {fmtDateUI(m.fechaEmpaque)} ·{" "}

@@ -33,7 +33,11 @@ async function withRetry<T>(fn: () => PromiseLike<T>, retries = 2, baseDelayMs =
   }
 }
 
-function muestraToRow(m: Muestra) {
+// Exportadas (antes privadas): permite reusarlas tal cual desde un script
+// de verificación standalone (fuera de la app) para probar el round-trip
+// real Muestra -> fila -> RPC -> fila -> Muestra sin duplicar esta lógica
+// a mano en el script. Sin cambio de comportamiento.
+export function muestraToRow(m: Muestra) {
   return {
     id: m.id,
     codigo: m.codigo,
@@ -70,7 +74,7 @@ function muestraToRow(m: Muestra) {
   };
 }
 
-function clamshellToRow(cs: Clamshell) {
+export function clamshellToRow(cs: Clamshell) {
   return {
     id: cs.id,
     muestra_id: cs.muestraId,
