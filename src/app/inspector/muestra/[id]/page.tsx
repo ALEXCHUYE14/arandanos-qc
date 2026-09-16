@@ -86,13 +86,26 @@ export default function CapturaPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function patch(next: Muestra) {
-    setDraft(next);
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      saveTimer.current = null;
-      updateMuestra(next);
-    }, 400);
+  // Acepta una Muestra completa (como antes — la usa MuestraHeaderForm, que
+  // arma el objeto entero a partir de su propio prop `m`) O una función que
+  // recibe el `draft` MÁS RECIENTE y devuelve el siguiente (la usan
+  // updateClamshell/addClamshell/deleteClamshell abajo). La forma función es
+  // la que hay que preferir para cualquier cambio nuevo: `setDraft(prev =>
+  // ...)` siempre parte del estado más al día que React tenga en ese
+  // instante, nunca de un `draft` capturado en la clausura de un cierre
+  // viejo — cierra por completo cualquier ventana, por chica que sea, en la
+  // que dos cambios seguidos pudieran pisarse entre sí en vez de sumarse.
+  function patch(nextOrUpdater: Muestra | ((prev: Muestra) => Muestra)) {
+    setDraft((prev) => {
+      const base = prev ?? draftRef.current!;
+      const next = typeof nextOrUpdater === "function" ? nextOrUpdater(base) : nextOrUpdater;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => {
+        saveTimer.current = null;
+        updateMuestra(next);
+      }, 400);
+      return next;
+    });
   }
 
   if (!draft) {
@@ -127,23 +140,27 @@ export default function CapturaPage() {
   const clamshells = [...draft.clamshells].sort((a, b) => a.nClamshell - b.nClamshell);
 
   function updateClamshell(cs: Clamshell) {
-    patch({ ...draft!, clamshells: draft!.clamshells.map((c) => (c.id === cs.id ? cs : c)) });
+    patch((prev) => ({ ...prev, clamshells: prev.clamshells.map((c) => (c.id === cs.id ? cs : c)) }));
   }
 
   function addClamshell() {
-    const n = (clamshells.at(-1)?.nClamshell ?? 0) + 1;
-    const cs = emptyClamshell(draft!.id, n);
-    // El N° de bayas evaluadas casi siempre se repite dentro del mismo lote
-    // — se hereda del clamshell anterior en vez de arrancar de nuevo en 99.
-    const anterior = clamshells.at(-1);
-    if (anterior?.nBayasEvaluadas) cs.nBayasEvaluadas = anterior.nBayasEvaluadas;
-    patch({ ...draft!, clamshells: [...draft!.clamshells, cs] });
+    patch((prev) => {
+      const ordenados = [...prev.clamshells].sort((a, b) => a.nClamshell - b.nClamshell);
+      const n = (ordenados.at(-1)?.nClamshell ?? 0) + 1;
+      const cs = emptyClamshell(prev.id, n);
+      // El N° de bayas evaluadas casi siempre se repite dentro del mismo
+      // lote — se hereda del clamshell anterior en vez de arrancar de
+      // nuevo en 99.
+      const anterior = ordenados.at(-1);
+      if (anterior?.nBayasEvaluadas) cs.nBayasEvaluadas = anterior.nBayasEvaluadas;
+      return { ...prev, clamshells: [...prev.clamshells, cs] };
+    });
     setTab(clamshells.length);
   }
 
   function deleteClamshell(csId: string) {
     if (draft!.clamshells.length <= 1) return;
-    patch({ ...draft!, clamshells: draft!.clamshells.filter((c) => c.id !== csId) });
+    patch((prev) => ({ ...prev, clamshells: prev.clamshells.filter((c) => c.id !== csId) }));
     setTab("datos");
   }
 
@@ -252,7 +269,19 @@ export default function CapturaPage() {
                     <Trash2 className="h-4 w-4" /> Quitar
                   </Button>
                 </div>
-                <ClamshellEditor clamshell={clamshells[tab as number]} muestra={draft} onChange={updateClamshell} />
+                {/* key={...id}: sin esto, React reutiliza la MISMA instancia de
+                    ClamshellEditor (y de cada NumberInput adentro) al cambiar de
+                    pestaña entre clamshells, porque queda en la misma posición
+                    del árbol — cualquier estado interno (ej. el texto que se
+                    está tipeando en "N° bayas evaluadas") podría arrastrarse de
+                    un clamshell a otro por una fracción de segundo. Con la key
+                    puesta, cambiar de clamshell fuerza un montaje limpio. */}
+                <ClamshellEditor
+                  key={clamshells[tab as number].id}
+                  clamshell={clamshells[tab as number]}
+                  muestra={draft}
+                  onChange={updateClamshell}
+                />
               </div>
             )
           )}

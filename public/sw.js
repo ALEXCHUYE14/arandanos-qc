@@ -2,7 +2,16 @@
  * Los datos de inspección se persisten aparte en IndexedDB (Dexie);
  * este SW solo asegura que la app cargue sin conexión. */
 
-const CACHE = "arandanos-qc-v2";
+// v3: el nombre del caché SOLO cambia cuando hace falta forzar que todos
+// los dispositivos bajen el app-shell de nuevo — el "activate" de abajo
+// borra cualquier caché con OTRO nombre, así que subir esta versión es lo
+// que realmente limpia lo viejo (antes de este cambio, el nombre llevaba
+// mucho tiempo fijo en "v2", así que ese borrado nunca se disparaba en la
+// práctica). No hace falta subirla por cada deploy normal (los archivos
+// .js de Next.js ya llevan hash en el nombre, así que un cambio de código
+// normal ya se sirve solo, fresco) — solo cuando se sospecha que algún
+// dispositivo quedó "pegado" en una versión vieja.
+const CACHE = "arandanos-qc-v3";
 const APP_SHELL = ["/", "/login", "/inspector", "/dashboard", "/manifest.json"];
 
 self.addEventListener("install", (event) => {
