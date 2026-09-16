@@ -1,14 +1,27 @@
 /**
  * SINCRONIZACIÓN BIDIRECCIONAL con Supabase.
  *
- * - push(): sube todas las muestras `pending` con una única llamada atómica
- *   por muestra (RPC `upsert_muestra_full`, ver supabase/schema.sql) que
- *   escribe la muestra + sus clamshells en una sola transacción, y detecta
- *   si alguien más la editó en el servidor mientras tanto (conflicto).
- * - pull(): descarga muestras del servidor y las mezcla en IndexedDB.
- * - Los fallos de red (sin señal, timeout) se reintentan con backoff
- *   exponencial; los errores que sí llegaron a responder del servidor
- *   (RLS, conflicto) no se reintentan — se resuelven, no se repiten.
+ * - push(): sube todas las muestras `pending` (y también las que quedaron en
+ *   `error` — ver más abajo) con una única llamada atómica por muestra (RPC
+ *   `upsert_muestra_full`, ver supabase/schema.sql) que escribe la muestra +
+ *   sus clamshells en una sola transacción, y detecta si alguien más la
+ *   editó en el servidor mientras tanto (conflicto).
+ * - pull(): descarga muestras del servidor y las mezcla en IndexedDB — NUNCA
+ *   pisa una muestra local en `pending`, `error` ni `conflict` (ver el
+ *   porqué, con el bug real que esto corrigió, en pullAll() más abajo).
+ * - Reintentos: DENTRO de un solo intento de push, `withRetry()` solo
+ *   reintenta fallos de RED (el fetch nunca llegó a responder) — un error
+ *   que el servidor SÍ llegó a responder (RLS, violación de constraint) no
+ *   se repite ahí, porque repetir la misma llamada no cambiaría ese
+ *   resultado. A través de los CICLOS de sync (cada 60s), en cambio,
+ *   pushPending() sí vuelve a intentar una muestra en `error` — a propósito:
+ *   la causa puede ser transitoria (red) o puede resolverse sola con el
+ *   tiempo (ej. una política RLS que se corrija en el servidor, como pasó de
+ *   verdad — ver is_owner() en supabase/schema.sql), y como pullAll() ya
+ *   protege a "error" del pisado, reintentar para siempre es más seguro que
+ *   dejar de intentar (el peor costo de seguir reintentando es una llamada
+ *   de más cada 60s; el de NO reintentar es una muestra que se queda
+ *   trabada para siempre, sin forma de que se cure sola).
  * - Se ejecuta al recuperar conexión y a demanda desde la UI.
  */
 

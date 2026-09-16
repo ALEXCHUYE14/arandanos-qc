@@ -483,6 +483,18 @@ create policy profiles_update on public.profiles
 -- propia fila y auto-asignarse rol='jefatura' desde el navegador (probado:
 -- funciona con un simple fetch autenticado, sin nada especial). Este trigger
 -- bloquea el cambio de `rol` salvo que quien edita ya sea jefatura.
+--
+-- También bloquea el auto-cambio de `nombre` — encontrado en una auditoría
+-- (no es hipotético): is_owner() (arriba) reconoce como dueño de una muestra
+-- tanto el UUID de auth.uid() COMO el `nombre` del perfil actual, a
+-- propósito, para las muestras viejas afectadas por la carrera documentada
+-- ahí. Pero si cualquiera pudiera cambiarse el nombre libremente, un
+-- inspector podría renombrarse EXACTAMENTE igual a otro (los nombres se ven
+-- en toda la app) y, gracias a esa misma comparación por nombre, quedarse
+-- con permiso de editar/borrar las muestras de esa otra persona. Se cierra
+-- dejando el cambio de `nombre` también reservado a Jefatura — un inspector
+-- sigue pudiendo ver/usar su perfil normalmente, solo no puede reescribir
+-- su propio nombre desde el navegador.
 create or replace function public.prevent_self_role_escalation()
 returns trigger language plpgsql as $$
 begin
@@ -490,9 +502,15 @@ begin
   -- migraciones, acceso directo a la base con las credenciales del proyecto)
   -- — eso ya implica ser dueño del proyecto, así que se confía. Lo que este
   -- trigger bloquea es que un usuario AUTENTICADO desde la app (no jefatura)
-  -- se auto-asigne el rol vía un PATCH directo al REST API.
-  if new.rol is distinct from old.rol and auth.uid() is not null and not public.is_jefatura() then
-    raise exception 'No autorizado para cambiar el rol de un perfil';
+  -- se auto-asigne el rol, o se cambie el nombre, vía un PATCH directo al
+  -- REST API.
+  if auth.uid() is not null and not public.is_jefatura() then
+    if new.rol is distinct from old.rol then
+      raise exception 'No autorizado para cambiar el rol de un perfil';
+    end if;
+    if new.nombre is distinct from old.nombre then
+      raise exception 'No autorizado para cambiar el nombre de un perfil — pedile a Jefatura que lo corrija';
+    end if;
   end if;
   return new;
 end; $$;
@@ -524,9 +542,14 @@ create policy empacadores_write on public.empacadores
 drop policy if exists muestras_select on public.muestras;
 create policy muestras_select on public.muestras
   for select to authenticated using (true);
+-- with check (true) original: cualquier autenticado podía insertar una
+-- muestra con un `created_by` cualquiera (el uid de otra persona, o el de
+-- Jefatura) — encontrado en una auditoría. Se exige que `created_by` sea
+-- el propio (mismo criterio que is_owner() usa para editar/borrar) o que
+-- quien inserta ya sea Jefatura.
 drop policy if exists muestras_insert on public.muestras;
 create policy muestras_insert on public.muestras
-  for insert to authenticated with check (true);
+  for insert to authenticated with check (public.is_owner(created_by) or public.is_jefatura());
 drop policy if exists muestras_update on public.muestras;
 create policy muestras_update on public.muestras
   for update to authenticated
@@ -540,6 +563,12 @@ create policy muestras_delete on public.muestras
 drop policy if exists clamshells_select on public.clamshells;
 create policy clamshells_select on public.clamshells
   for select to authenticated using (true);
+-- with check (true) original: el USING solo valida SELECT/UPDATE/DELETE (filas
+-- ya existentes) — para INSERT, lo único que manda es el WITH CHECK. Al ser
+-- "true" sin condición, cualquier autenticado podía insertar un clamshell
+-- apuntando a la muestra_id de OTRA PERSONA (encontrado en una auditoría),
+-- pese a que el comentario de esta policy decía "heredan del acceso a su
+-- muestra". Se repite la misma condición del USING también acá.
 drop policy if exists clamshells_write on public.clamshells;
 create policy clamshells_write on public.clamshells
   for all to authenticated
@@ -548,7 +577,11 @@ create policy clamshells_write on public.clamshells
             where m.id = muestra_id
               and (public.is_owner(m.created_by) or public.is_jefatura()))
   )
-  with check (true);
+  with check (
+    exists (select 1 from public.muestras m
+            where m.id = muestra_id
+              and (public.is_owner(m.created_by) or public.is_jefatura()))
+  );
 
 -- =====================================================================
 --  REALTIME
