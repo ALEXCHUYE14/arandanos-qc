@@ -139,8 +139,16 @@ export default function CapturaPage() {
   const notaMostrada = draft.notaManual ?? (res.cumple ? 15 : 5);
   const clamshells = [...draft.clamshells].sort((a, b) => a.nClamshell - b.nClamshell);
 
-  function updateClamshell(cs: Clamshell) {
-    patch((prev) => ({ ...prev, clamshells: prev.clamshells.map((c) => (c.id === cs.id ? cs : c)) }));
+  // Recibe una función que calcula el clamshell `csId` siguiente a partir
+  // del ANTERIOR (no un objeto Clamshell ya armado) — cierra la cadena
+  // completa de "siempre partir del estado más reciente" que empieza en
+  // DefectCounter/ClamshellEditor: acá es donde de verdad se sabe cuál es
+  // el clamshell más al día (adentro del propio `patch()`, sobre `prev`).
+  function updateClamshell(csId: string, updater: (prev: Clamshell) => Clamshell) {
+    patch((prev) => ({
+      ...prev,
+      clamshells: prev.clamshells.map((c) => (c.id === csId ? updater(c) : c)),
+    }));
   }
 
   function addClamshell() {
@@ -280,7 +288,7 @@ export default function CapturaPage() {
                   key={clamshells[tab as number].id}
                   clamshell={clamshells[tab as number]}
                   muestra={draft}
-                  onChange={updateClamshell}
+                  onChange={(updater) => updateClamshell(clamshells[tab as number].id, updater)}
                 />
               </div>
             )

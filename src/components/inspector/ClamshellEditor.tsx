@@ -30,17 +30,22 @@ export function ClamshellEditor({
 }: {
   clamshell: Clamshell;
   muestra: Pick<Muestra, "destino" | "embalajeCaja" | "empacador" | "cliente">;
-  onChange: (cs: Clamshell) => void;
+  // Recibe una función que calcula el clamshell siguiente a partir del
+  // ANTERIOR (no un objeto Clamshell ya armado) — mismo motivo que
+  // DefectCounter: partir siempre del valor más reciente que
+  // muestra/[id]/page.tsx tenga en ese instante, nunca de este `clamshell`
+  // (prop, puede quedar un paso atrás si dos cambios se acumulan).
+  onChange: (updater: (prev: Clamshell) => Clamshell) => void;
 }) {
   const [q, setQ] = useState("");
   const tier = resolveDestinoTier(muestra.destino, muestra.embalajeCaja, muestra.cliente);
   const res = computeClamshell(clamshell, tier);
 
-  const setCount = (key: string, v: number) =>
-    onChange({ ...clamshell, counts: { ...clamshell.counts, [key]: v } });
+  const setCount = (key: string, updater: (prev: number) => number) =>
+    onChange((prev) => ({ ...prev, counts: { ...prev.counts, [key]: updater(prev.counts[key] || 0) } }));
 
   function setBayas(v: number) {
-    onChange({ ...clamshell, nBayasEvaluadas: v });
+    onChange((prev) => ({ ...prev, nBayasEvaluadas: v }));
     // Se recuerda por empacador: casi siempre se repite dentro del mismo
     // lote, así la próxima muestra de este empacador ya arranca con el
     // número correcto (ver onEmpacadorChange en MuestraHeaderForm).
@@ -81,9 +86,10 @@ export function ClamshellEditor({
             className="no-spin"
             placeholder={`auto: ${res.cumple ? 15 : "<15"}`}
             value={clamshell.nota ?? ""}
-            onChange={(e) =>
-              onChange({ ...clamshell, nota: e.target.value === "" ? null : parseInt(e.target.value, 10) })
-            }
+            onChange={(e) => {
+              const nota = e.target.value === "" ? null : parseInt(e.target.value, 10);
+              onChange((prev) => ({ ...prev, nota }));
+            }}
           />
         </div>
         <div className="flex flex-col justify-end">
@@ -137,7 +143,7 @@ export function ClamshellEditor({
                   def={d}
                   value={clamshell.counts[d.key] || 0}
                   pct={res.defectPct[d.key] || 0}
-                  onChange={(v) => setCount(d.key, v)}
+                  onChange={(updater) => setCount(d.key, updater)}
                 />
               ))}
             </RollupGroup>
@@ -160,7 +166,7 @@ export function ClamshellEditor({
                   def={d}
                   value={clamshell.counts[d.key] || 0}
                   pct={res.defectPct[d.key] || 0}
-                  onChange={(v) => setCount(d.key, v)}
+                  onChange={(updater) => setCount(d.key, updater)}
                 />
               ))}
             </RollupGroup>
@@ -174,7 +180,10 @@ export function ClamshellEditor({
         <Input
           value={clamshell.observacion}
           placeholder="Nota breve…"
-          onChange={(e) => onChange({ ...clamshell, observacion: e.target.value })}
+          onChange={(e) => {
+            const observacion = e.target.value;
+            onChange((prev) => ({ ...prev, observacion }));
+          }}
         />
       </div>
     </div>
