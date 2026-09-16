@@ -170,7 +170,14 @@ async function pushOne(m: Muestra, force = false): Promise<"ok" | "conflict"> {
 
 export async function pushPending(): Promise<{ ok: number; fail: number; conflict: number }> {
   if (!isSupabaseConfigured || !supabase) return { ok: 0, fail: 0, conflict: 0 };
-  const pending = (await listMuestrasLocal()).filter((m) => m.sync === "pending");
+  // También se reintentan las que quedaron en "error" (un push anterior
+  // falló — red inestable, típico en planta) — antes SOLO se tomaban las
+  // "pending", así que una que fallara UNA VEZ quedaba marcada "error" PARA
+  // SIEMPRE: nunca se volvía a intentar subir, Y (bug relacionado, ver
+  // pullAll() más abajo) quedaba desprotegida frente al próximo pull, que
+  // la pisaba con la versión vieja del servidor — pareciendo que los datos
+  // recién cargados "se borraban solos".
+  const pending = (await listMuestrasLocal()).filter((m) => m.sync === "pending" || m.sync === "error");
   let ok = 0;
   let fail = 0;
   let conflict = 0;
@@ -218,9 +225,18 @@ export async function pullAll(): Promise<number> {
   for (const r of muestras as any[]) {
     if (borradas.has(r.id)) continue;
     const local = await db.muestras.get(r.id);
-    // No pisar cambios locales aún no sincronizados, ni un conflicto que el
-    // usuario todavía no resolvió a mano.
-    if (local && (local.sync === "pending" || local.sync === "conflict")) continue;
+    // No pisar cambios locales aún no sincronizados ("pending"), un
+    // conflicto que el usuario todavía no resolvió a mano ("conflict"), NI
+    // uno cuyo push falló ("error") — este último faltaba, y era un bug
+    // real que perdía datos de verdad: pushPending() sube todo lo
+    // "pending"/"error" y LUEGO, en el mismo fullSync(), se llama a este
+    // pullAll(). Si el push de una muestra fallaba (red inestable — muy
+    // común en planta) quedaba en "error", y al no estar excluida acá, EL
+    // MISMO ciclo de sync la volvía a bajar del servidor con la versión
+    // vieja (la del último push que SÍ había llegado, quizás con menos
+    // clamshells o defectos en cero) y la pisaba — el inspector veía sus
+    // datos recién cargados "resetearse solos" sin haber hecho nada raro.
+    if (local && (local.sync === "pending" || local.sync === "conflict" || local.sync === "error")) continue;
 
     const nueva = rowToMuestra(r, byMuestra.get(r.id) || []);
     // grupoId (la "carpeta"/Grupo de especificaciones) es puramente local:

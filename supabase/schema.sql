@@ -42,6 +42,34 @@ returns boolean language sql stable security definer as $$
   );
 $$;
 
+-- Helper: ¿`p_created_by` corresponde al usuario actual?
+--
+-- Compara contra el UUID de auth.uid() (el caso normal), PERO TAMBIÉN
+-- contra el NOMBRE del perfil del usuario actual — igual que ya hace
+-- esDelUsuarioActual() en el cliente (hooks/useMuestras.ts).
+--
+-- Por qué hace falta esto: createMuestra() (cliente) guarda `created_by`
+-- como `auth.userId || inspectorNombre || "inspector"` — si la sesión
+-- todavía no había terminado de resolver en el instante exacto de crear la
+-- muestra (una carrera real, ya documentada), `created_by` queda grabado
+-- con el NOMBRE del inspector en vez de su UUID, PARA SIEMPRE (createMuestra
+-- corre una sola vez). Antes, muestras_update/clamshells_write solo
+-- reconocían el UUID exacto — cualquier muestra afectada por esa carrera
+-- quedaba bloqueada por RLS en TODAS sus ediciones futuras después de la
+-- primera (que sí entra, porque es un INSERT, no un UPDATE). El push fallaba
+-- silenciosamente en cada sync, y — bug relacionado, ya corregido en
+-- pullAll()/pushPending() (lib/sync.ts) — el siguiente pull pisaba esa
+-- muestra con la versión vieja del servidor, "borrando" los datos recién
+-- cargados. Este helper hace que esas muestras vuelvan a ser editables de
+-- inmediato, sin ninguna migración de datos: no importa qué valor tenga
+-- `created_by` grabado, alcanza con que coincida con el UUID O el nombre
+-- del perfil de quien está editando ahora.
+create or replace function public.is_owner(p_created_by text)
+returns boolean language sql stable security definer as $$
+  select p_created_by = auth.uid()::text
+     or p_created_by = (select nombre from public.profiles where id = auth.uid());
+$$;
+
 -- =====================================================================
 --  MUESTRAS (lote / código ME-XXXXX) — cabecera repetida del maestro
 -- =====================================================================
@@ -502,11 +530,11 @@ create policy muestras_insert on public.muestras
 drop policy if exists muestras_update on public.muestras;
 create policy muestras_update on public.muestras
   for update to authenticated
-  using (created_by = auth.uid()::text or public.is_jefatura());
+  using (public.is_owner(created_by) or public.is_jefatura());
 drop policy if exists muestras_delete on public.muestras;
 create policy muestras_delete on public.muestras
   for delete to authenticated
-  using (created_by = auth.uid()::text or public.is_jefatura());
+  using (public.is_owner(created_by) or public.is_jefatura());
 
 -- clamshells: heredan del acceso a su muestra.
 drop policy if exists clamshells_select on public.clamshells;
@@ -518,7 +546,7 @@ create policy clamshells_write on public.clamshells
   using (
     exists (select 1 from public.muestras m
             where m.id = muestra_id
-              and (m.created_by = auth.uid()::text or public.is_jefatura()))
+              and (public.is_owner(m.created_by) or public.is_jefatura()))
   )
   with check (true);
 
