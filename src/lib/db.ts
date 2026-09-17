@@ -45,12 +45,35 @@ export interface TombstoneEntry {
   deletedAt: string;
 }
 
+/**
+ * Registro de diagnóstico — pensado específicamente para el bug reportado
+ * varias veces ("cargo un clamshell, sincronizo, y desaparece"): cada vez
+ * que pullAll()/pushOne() (lib/sync.ts) detectan que el N° de clamshells de
+ * una muestra BAJÓ respecto de lo que había localmente, queda anotado acá
+ * con todo el detalle técnico (de dónde vino el cambio, cuántos había antes
+ * y después, qué devolvió el servidor). No se pudo reproducir el bug con
+ * pruebas automatizadas — este registro sirve para atraparlo con evidencia
+ * real la próxima vez que ocurra en un dispositivo de verdad, en vez de
+ * tener que adivinar a partir de una captura de pantalla.
+ */
+export interface SyncLogEntry {
+  id?: number; // autoincremental
+  ts: string;
+  muestraId: string;
+  codigo: string;
+  origen: "pullAll" | "pushOne" | "resolveConflictUseServer";
+  clamshellsAntes: number;
+  clamshellsDespues: number;
+  detalle: string; // contexto adicional (ids de clamshells del servidor, etc.)
+}
+
 class ArandanosDB extends Dexie {
   muestras!: Table<Muestra, string>;
   catalogos!: Table<CatalogoEntry, [string, string]>;
   seq!: Table<SeqEntry, string>;
   tombstones!: Table<TombstoneEntry, string>;
   grupos!: Table<GrupoEntry, string>;
+  syncLog!: Table<SyncLogEntry, number>;
 
   constructor() {
     super("arandanos_qc");
@@ -69,6 +92,10 @@ class ArandanosDB extends Dexie {
     // no destructiva, solo suma la tabla nueva (vacía) por encima.
     this.version(3).stores({
       grupos: "id, createdBy, createdAt",
+    });
+    // v4: agrega `syncLog` (diagnóstico) — misma migración no destructiva.
+    this.version(4).stores({
+      syncLog: "++id, muestraId, ts",
     });
   }
 }
@@ -113,6 +140,27 @@ export async function deleteMuestraLocal(id: string): Promise<void> {
 
 export async function getMuestraLocal(id: string): Promise<Muestra | undefined> {
   return db.muestras.get(id);
+}
+
+/** Registra un evento en el log de diagnóstico (ver SyncLogEntry arriba). */
+export async function registrarEventoSync(entry: Omit<SyncLogEntry, "id" | "ts">): Promise<void> {
+  if (!db) return;
+  await db.syncLog.add({ ...entry, ts: new Date().toISOString() });
+  // Se limita a los últimos 500 para no crecer sin límite en un dispositivo
+  // que quede prendido mucho tiempo — de sobra para diagnosticar cualquier
+  // caso puntual reciente.
+  const total = await db.syncLog.count();
+  if (total > 500) {
+    const viejos = await db.syncLog.orderBy("id").limit(total - 500).toArray();
+    await db.syncLog.bulkDelete(viejos.map((v) => v.id!));
+  }
+}
+
+/** Todo el log de diagnóstico, más reciente primero. */
+export async function listSyncLog(): Promise<SyncLogEntry[]> {
+  if (!db) return [];
+  const all = await db.syncLog.toArray();
+  return all.sort((a, b) => (a.ts < b.ts ? 1 : -1));
 }
 
 export async function listMuestrasLocal(): Promise<Muestra[]> {

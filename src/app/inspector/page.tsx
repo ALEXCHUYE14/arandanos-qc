@@ -398,6 +398,12 @@ export default function InspectorListPage() {
         onConfirm={confirmarEliminarGrupo}
         onCancel={() => setGrupoAEliminar(null)}
       />
+
+      <div className="mt-6 text-center">
+        <Link href="/inspector/diagnostico" className="text-[11px] text-muted/60 hover:text-muted">
+          Diagnóstico
+        </Link>
+      </div>
     </main>
   );
 }

@@ -26,7 +26,7 @@
  */
 
 import { supabase, isSupabaseConfigured } from "./supabase";
-import { db, listMuestrasLocal } from "./db";
+import { db, listMuestrasLocal, registrarEventoSync } from "./db";
 import type { Muestra, Clamshell } from "./types";
 
 /**
@@ -274,7 +274,8 @@ export async function pullAll(): Promise<number> {
     // datos recién cargados "resetearse solos" sin haber hecho nada raro.
     if (local && (local.sync === "pending" || local.sync === "conflict" || local.sync === "error")) continue;
 
-    const nueva = rowToMuestra(r, byMuestra.get(r.id) || []);
+    const clamshellsServidor = byMuestra.get(r.id) || [];
+    const nueva = rowToMuestra(r, clamshellsServidor);
     // grupoId (la "carpeta"/Grupo de especificaciones) es puramente local:
     // no viaja a Supabase (ver muestraToRow arriba), así que rowToMuestra()
     // siempre la deja en null. Sin este merge, cada sync automático (cada
@@ -283,6 +284,21 @@ export async function pullAll(): Promise<number> {
     // muestra terminaba de sincronizar una vez. Se preserva la que ya
     // hubiera localmente.
     if (local?.grupoId) nueva.grupoId = local.grupoId;
+
+    // Diagnóstico: si el N° de clamshells BAJA en esta fusión, se anota con
+    // todo el detalle — ver SyncLogEntry (lib/db.ts) y el porqué en su
+    // comentario. No cambia el comportamiento en nada, solo deja evidencia.
+    if (local && local.clamshells.length > nueva.clamshells.length) {
+      registrarEventoSync({
+        origen: "pullAll",
+        muestraId: r.id,
+        codigo: r.codigo || "",
+        clamshellsAntes: local.clamshells.length,
+        clamshellsDespues: nueva.clamshells.length,
+        detalle: `servidor devolvió ${clamshellsServidor.length} clamshell(s) para esta muestra (ids: ${clamshellsServidor.map((c: any) => c.id).join(",") || "ninguno"}); local.sync antes de fusionar: ${local.sync}`,
+      }).catch(() => {});
+    }
+
     await db.muestras.put(nueva);
     merged++;
   }
@@ -402,6 +418,20 @@ export async function resolveConflictUseServer(id: string): Promise<void> {
   // se preserva la carpeta que ya tuviera esta muestra en este dispositivo.
   const local = await db.muestras.get(id);
   if (local?.grupoId) nueva.grupoId = local.grupoId;
+
+  // Diagnóstico (ver el mismo bloque, con la explicación completa, en
+  // pullAll() más arriba).
+  if (local && local.clamshells.length > nueva.clamshells.length) {
+    registrarEventoSync({
+      origen: "resolveConflictUseServer",
+      muestraId: id,
+      codigo: r.codigo || "",
+      clamshellsAntes: local.clamshells.length,
+      clamshellsDespues: nueva.clamshells.length,
+      detalle: `servidor devolvió ${(cls || []).length} clamshell(s) (ids: ${(cls || []).map((c: any) => c.id).join(",") || "ninguno"})`,
+    }).catch(() => {});
+  }
+
   await db.muestras.put(nueva);
 }
 
