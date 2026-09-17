@@ -50,9 +50,46 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Registro del Service Worker (PWA offline).
+    // Registro del Service Worker (PWA offline) + actualización automática.
+    //
+    // Bug real reportado varias veces ("no veo los cambios", en el celular
+    // Y en la PC): un dispositivo que ya tenía la app abierta podía quedar
+    // corriendo una versión vieja del código de forma indefinida — el
+    // navegador solo revisa si hay una versión nueva de sw.js de tanto en
+    // tanto, y aunque la detectara y la activara sola (public/sw.js ya usa
+    // self.skipWaiting() + clients.claim(), así que SÍ toma control casi de
+    // inmediato), nada forzaba a la pestaña ABIERTA a usar esa versión
+    // nueva — solo se veía al cerrar la app del todo y volver a abrirla a
+    // mano, lo que daba la falsa impresión de que ninguna corrección
+    // llegaba nunca.
+    //
+    // Acá se pide explícitamente revisar si hay una versión nueva (algunos
+    // navegadores son perezosos para chequearlo solos) y, si el navegador
+    // efectivamente cambia de Service Worker CONTROLADOR mientras esta
+    // pestaña ya estaba abierta (una actualización real, no la primera
+    // instalación), se recarga la página una sola vez — así el usuario
+    // siempre ve la versión más reciente sin tener que hacer nada. Si hay
+    // una edición sin guardar en curso (ej. un clamshell a medio tipear),
+    // el flush de "pagehide" (ver muestra/[id]/page.tsx) corre igual justo
+    // antes de que la recarga navegue afuera — no se pierde nada.
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      const yaHabiaControlador = Boolean(navigator.serviceWorker.controller);
+      navigator.serviceWorker
+        .register("/sw.js")
+        .then((reg) => reg.update().catch(() => {}))
+        .catch(() => {});
+
+      let recargando = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        // Si esta pestaña nunca tuvo un Service Worker controlándola (recién
+        // se está instalando por primera vez), este mismo evento se dispara
+        // igual al activarse — no es una actualización real (la página ya
+        // se sirvió fresca en esta misma carga), así que no hace falta
+        // recargar.
+        if (!yaHabiaControlador || recargando) return;
+        recargando = true;
+        window.location.reload();
+      });
     }
 
     const on = () => {
