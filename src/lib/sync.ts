@@ -46,6 +46,31 @@ async function withRetry<T>(fn: () => PromiseLike<T>, retries = 2, baseDelayMs =
   }
 }
 
+/**
+ * Trae TODAS las filas de una tabla, paginando de a 1000 — el límite por
+ * defecto que aplica Supabase/PostgREST a `.select("*")` cuando no se le
+ * pide explícitamente lo contrario. Sin esto, una tabla que ya superó esa
+ * cantidad de filas devuelve solo una PARTE en silencio (sin ningún
+ * error) — ver el bug real que esto corrigió, con el detalle completo, en
+ * pullAll() más abajo. `query(from, to)` debe aplicar `.range(from, to)`
+ * sobre una consulta con un ORDEN determinístico (sin orden, Postgres no
+ * garantiza que dos páginas consecutivas no se salten o repitan filas).
+ */
+export async function fetchAllRows<T = any>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>
+): Promise<{ data: T[] | null; error: any }> {
+  const PAGE = 1000;
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await withRetry(() => query(from, from + PAGE - 1));
+    if (error) return { data: null, error };
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE) break; // última página (vino incompleta)
+  }
+  return { data: all, error: null };
+}
+
 // Exportadas (antes privadas): permite reusarlas tal cual desde un script
 // de verificación standalone (fuera de la app) para probar el round-trip
 // real Muestra -> fila -> RPC -> fila -> Muestra sin duplicar esta lógica
@@ -216,29 +241,31 @@ export async function pushPending(): Promise<{ ok: number; fail: number; conflic
 
 export async function pullAll(): Promise<number> {
   if (!isSupabaseConfigured || !supabase) return 0;
-  const { data: muestras, error } = await withRetry(() =>
-    supabase!.from("muestras").select("*").order("updated_at", { ascending: false })
+  const { data: muestras, error } = await fetchAllRows<any>((from, to) =>
+    supabase!.from("muestras").select("*").order("updated_at", { ascending: false }).range(from, to)
   );
   if (error || !muestras) return 0;
 
-  // BUG REAL encontrado y corregido acá — probablemente la causa de fondo
-  // de "cargo los clamshells, sincronizo, y me quedan en 0 clamshells /
-  // 0.0% de descarte", reportado repetidas veces: esta consulta descartaba
-  // su propio `error` sin chequearlo (`const { data: clamshells } = ...`,
-  // nunca `error`). Si fallaba por CUALQUIER motivo transitorio que el
-  // servidor SÍ llegara a responder (no necesariamente de red — withRetry
-  // solo reintenta excepciones), `clamshells` quedaba en `null`/`undefined`
-  // y `(clamshells || [])` "resolvía" con un arreglo vacío EN SILENCIO, sin
-  // ningún error ni log. Como resultado, `byMuestra` quedaba
-  // COMPLETAMENTE VACÍO — y CADA muestra que se fusionara en este mismo
-  // ciclo de pull (no solo una) recibía rowToMuestra(r, []) → 0
-  // clamshells, pisando la copia local de este dispositivo aunque el
-  // servidor nunca hubiera perdido nada. Ahora, si esta consulta falla, se
-  // aborta TODO el ciclo (como ya hacía la consulta de muestras un poco
-  // más arriba) en vez de fusionar con un mapa de clamshells a medias — el
-  // próximo ciclo de sync (60s) lo vuelve a intentar limpio.
-  const { data: clamshells, error: errorClamshells } = await withRetry(() =>
-    supabase!.from("clamshells").select("*")
+  // BUG REAL encontrado — este SÍ es el que explica "cargo un clamshell,
+  // sincronizo, y desaparece / 0.0% de descarte", confirmado viendo un
+  // video real del cliente: crea una muestra con 3 clamshells con
+  // defectos reales, sincroniza (el código pasa de provisorio a uno real,
+  // confirmando que el push funcionó), y el descarte queda en 0.0% —
+  // sin ningún error en el medio.
+  //
+  // Causa: por configuración estándar, Supabase/PostgREST devuelve como
+  // MÁXIMO 1000 filas por consulta si no se le pide explícitamente lo
+  // contrario (con `.range()`) — el resto se corta EN SILENCIO, sin
+  // ningún error. `supabase.from("clamshells").select("*")`, sin ningún
+  // límite ni paginación, llevaba meses así. Con más de 500 muestras ya
+  // cargadas (bastantes más de 1000 clamshells entre todas), esa consulta
+  // ya no traía la tabla completa — y las muestras MÁS NUEVAS (las que se
+  // acaban de crear) son justo las que quedan afuera de la porción que sí
+  // llega. No es que el servidor pierda nada: nunca llegaba a bajarse en
+  // primer lugar. fetchAllRows() (abajo) pagina de a 1000 hasta traer la
+  // tabla completa, sin importar cuánto crezca de acá en adelante.
+  const { data: clamshells, error: errorClamshells } = await fetchAllRows<any>((from, to) =>
+    supabase!.from("clamshells").select("*").order("id", { ascending: true }).range(from, to)
   );
   if (errorClamshells || !clamshells) return 0;
   const byMuestra = new Map<string, any[]>();

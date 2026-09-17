@@ -18,7 +18,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
-import { rowToMuestra } from "@/lib/sync";
+import { rowToMuestra, fetchAllRows } from "@/lib/sync";
 import { listMuestrasLocal } from "@/lib/db";
 import type { Muestra } from "@/lib/types";
 
@@ -53,9 +53,20 @@ export function useMuestrasCloud(): MuestrasCloudState {
     async function load() {
       if (primeraCargaRef.current) setLoading(true);
       try {
+        // fetchAllRows() (no un .select("*") suelto): Supabase/PostgREST
+        // devuelve como máximo 1000 filas por consulta si no se pide
+        // explícitamente lo contrario — con más de 500 muestras y sus
+        // clamshells ya cargados, un .select("*") sin paginar viene
+        // devolviendo solo una PARTE de la tabla en silencio, dejando
+        // afuera justo a las muestras más nuevas. Ver el detalle completo
+        // del bug real que esto corrigió en pullAll() (lib/sync.ts).
         const [{ data: muestras, error: e1 }, { data: clamshells, error: e2 }] = await Promise.all([
-          supabase!.from("muestras").select("*").order("updated_at", { ascending: false }),
-          supabase!.from("clamshells").select("*"),
+          fetchAllRows<any>((from, to) =>
+            supabase!.from("muestras").select("*").order("updated_at", { ascending: false }).range(from, to)
+          ),
+          fetchAllRows<any>((from, to) =>
+            supabase!.from("clamshells").select("*").order("id", { ascending: true }).range(from, to)
+          ),
         ]);
         if (e1) throw e1;
         if (e2) throw e2;
