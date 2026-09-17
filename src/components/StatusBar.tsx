@@ -17,6 +17,16 @@ export function StatusBar() {
 
   return (
     <div className="no-print sticky top-0 z-40 flex h-7 items-center justify-between gap-2 border-b border-line bg-surface/90 px-3 text-[11px] font-medium text-muted backdrop-blur">
+      {/* Identificador de la versión que está corriendo ESTE dispositivo
+          (ver next.config.js) — visible en cualquier captura de pantalla,
+          para poder confirmar de un vistazo si ya tiene el código más
+          reciente o si sigue en una versión vieja sin actualizar. */}
+      <span
+        className="shrink-0 font-mono text-[10px] text-muted/60"
+        title="Versión de la app en este dispositivo"
+      >
+        v{process.env.NEXT_PUBLIC_BUILD_SHA}
+      </span>
       <div className="flex flex-1 items-center justify-center gap-2">
         {!isSupabaseConfigured ? (
           <span className="flex items-center gap-1 text-warning">

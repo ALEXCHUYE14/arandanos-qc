@@ -72,12 +72,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
     // una edición sin guardar en curso (ej. un clamshell a medio tipear),
     // el flush de "pagehide" (ver muestra/[id]/page.tsx) corre igual justo
     // antes de que la recarga navegue afuera — no se pierde nada.
+    let intervaloChequeoSW: ReturnType<typeof setInterval> | null = null;
     if ("serviceWorker" in navigator) {
       const yaHabiaControlador = Boolean(navigator.serviceWorker.controller);
+      let registro: ServiceWorkerRegistration | null = null;
       navigator.serviceWorker
         .register("/sw.js")
-        .then((reg) => reg.update().catch(() => {}))
+        .then((reg) => {
+          registro = reg;
+          reg.update().catch(() => {});
+        })
         .catch(() => {});
+
+      // Revisión periódica (no solo al abrir la app): un celular/PC que se
+      // deja con la pestaña abierta durante horas (muy común — el
+      // inspector no la cierra en toda la jornada) nunca volvía a chequear
+      // por su cuenta si había una versión nueva, así que seguía corriendo
+      // el código de la mañana todo el día. Cada 10 minutos alcanza — no
+      // hace falta más seguido, y evita gastar batería/datos de más.
+      intervaloChequeoSW = setInterval(() => {
+        registro?.update().catch(() => {});
+      }, 10 * 60 * 1000);
 
       let recargando = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
@@ -118,6 +133,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       window.removeEventListener("online", on);
       window.removeEventListener("offline", off);
       clearInterval(iv);
+      if (intervaloChequeoSW) clearInterval(intervaloChequeoSW);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
