@@ -221,7 +221,26 @@ export async function pullAll(): Promise<number> {
   );
   if (error || !muestras) return 0;
 
-  const { data: clamshells } = await withRetry(() => supabase!.from("clamshells").select("*"));
+  // BUG REAL encontrado y corregido acá — probablemente la causa de fondo
+  // de "cargo los clamshells, sincronizo, y me quedan en 0 clamshells /
+  // 0.0% de descarte", reportado repetidas veces: esta consulta descartaba
+  // su propio `error` sin chequearlo (`const { data: clamshells } = ...`,
+  // nunca `error`). Si fallaba por CUALQUIER motivo transitorio que el
+  // servidor SÍ llegara a responder (no necesariamente de red — withRetry
+  // solo reintenta excepciones), `clamshells` quedaba en `null`/`undefined`
+  // y `(clamshells || [])` "resolvía" con un arreglo vacío EN SILENCIO, sin
+  // ningún error ni log. Como resultado, `byMuestra` quedaba
+  // COMPLETAMENTE VACÍO — y CADA muestra que se fusionara en este mismo
+  // ciclo de pull (no solo una) recibía rowToMuestra(r, []) → 0
+  // clamshells, pisando la copia local de este dispositivo aunque el
+  // servidor nunca hubiera perdido nada. Ahora, si esta consulta falla, se
+  // aborta TODO el ciclo (como ya hacía la consulta de muestras un poco
+  // más arriba) en vez de fusionar con un mapa de clamshells a medias — el
+  // próximo ciclo de sync (60s) lo vuelve a intentar limpio.
+  const { data: clamshells, error: errorClamshells } = await withRetry(() =>
+    supabase!.from("clamshells").select("*")
+  );
+  if (errorClamshells || !clamshells) return 0;
   const byMuestra = new Map<string, any[]>();
   (clamshells || []).forEach((c: any) => {
     const arr = byMuestra.get(c.muestra_id) || [];
@@ -367,9 +386,17 @@ export async function resolveConflictUseServer(id: string): Promise<void> {
     supabase!.from("muestras").select("*").eq("id", id).maybeSingle()
   );
   if (error || !r) throw error ?? new Error("La muestra ya no existe en el servidor");
-  const { data: cls } = await withRetry(() =>
+  // Mismo bug que en pullAll() (ver el comentario grande ahí): si esta
+  // consulta fallaba, `cls` quedaba en null y `(cls || [])` lo resolvía en
+  // silencio como "sin clamshells" — "Usar la del servidor" habría borrado
+  // los clamshells de la copia local aunque el servidor los tuviera
+  // intactos. Ahora, si falla, se corta con una excepción en vez de seguir
+  // con datos a medias (el botón vuelve a quedar disponible para
+  // reintentar, ver dashboard/page.tsx e inspector/page.tsx).
+  const { data: cls, error: errorCls } = await withRetry(() =>
     supabase!.from("clamshells").select("*").eq("muestra_id", id)
   );
+  if (errorCls) throw errorCls;
   const nueva = rowToMuestra(r, cls || []);
   // Mismo motivo que en pullAll(): grupoId es local, no viaja a Supabase —
   // se preserva la carpeta que ya tuviera esta muestra en este dispositivo.
