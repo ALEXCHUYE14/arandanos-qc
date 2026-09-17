@@ -17,20 +17,23 @@ import {
   TrendingDown,
   Users,
   UserCog,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input, Select, Label } from "@/components/ui/input";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { DescarteEmpacadorChart, TendenciaSemanalChart } from "@/components/dashboard/Charts";
 import { ToleranciaMercado } from "@/components/dashboard/ToleranciaMercado";
 import { useMuestrasCloud } from "@/hooks/useMuestrasCloud";
 import { computeMuestra, computeRiesgo } from "@/lib/calc";
 import { overview, porEmpacador, porSemana } from "@/lib/analytics";
 import { downloadXlsx, copyManyToClipboard } from "@/lib/excel";
-import { fullSync, resolveConflictKeepLocal, resolveConflictUseServer } from "@/lib/sync";
+import { fullSync, resolveConflictKeepLocal, resolveConflictUseServer, deleteMuestraFromServer } from "@/lib/sync";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { cn, fmtDateUI } from "@/lib/utils";
+import type { Muestra } from "@/lib/types";
 
 export default function DashboardPage() {
   const { data: all, error: cloudError, live } = useMuestrasCloud();
@@ -77,6 +80,31 @@ export default function DashboardPage() {
       console.error("[conflicto] no se pudo traer la versión del servidor", e);
     } finally {
       marcarResolviendo(id, false);
+    }
+  }
+
+  // Eliminar DEFINITIVAMENTE una muestra — a diferencia del borrado local
+  // de /inspector ("Limpiar registros"), esto sí la borra de Supabase para
+  // siempre, en todos los dispositivos (ver deleteMuestraFromServer en
+  // lib/sync.ts). Solo Jefatura llega a esta pantalla (protegido por
+  // middleware.ts), y las políticas RLS igual lo exigirían aunque alguien
+  // intentara saltarse la UI.
+  const [muestraAEliminar, setMuestraAEliminar] = useState<Muestra | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+  const [errorEliminar, setErrorEliminar] = useState<string | null>(null);
+
+  async function confirmarEliminar() {
+    if (!muestraAEliminar) return;
+    setEliminando(true);
+    setErrorEliminar(null);
+    try {
+      await deleteMuestraFromServer(muestraAEliminar.id);
+      setMuestraAEliminar(null);
+    } catch (e) {
+      console.error("[dashboard] no se pudo eliminar la muestra", e);
+      setErrorEliminar("No se pudo eliminar. Probá de nuevo.");
+    } finally {
+      setEliminando(false);
     }
   }
 
@@ -334,9 +362,23 @@ export default function DashboardPage() {
                             </Button>
                           </div>
                         ) : (
-                          <Link href={`/reporte/${m.id}`}>
-                            <Button variant="ghost" size="sm"><FileText className="h-4 w-4" /></Button>
-                          </Link>
+                          <div className="flex justify-end gap-1">
+                            <Link href={`/reporte/${m.id}`}>
+                              <Button variant="ghost" size="sm"><FileText className="h-4 w-4" /></Button>
+                            </Link>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-danger"
+                              title="Eliminar definitivamente (del servidor, para siempre)"
+                              onClick={() => {
+                                setErrorEliminar(null);
+                                setMuestraAEliminar(m);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -354,6 +396,27 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ConfirmDialog
+        open={muestraAEliminar !== null}
+        title="¿Eliminar esta muestra definitivamente?"
+        description={
+          <>
+            Se va a borrar <strong>{muestraAEliminar?.codigo}</strong> del servidor para siempre —
+            no solo de este dispositivo: desaparece de todos los celulares/tablets y de este panel.{" "}
+            <strong>Esta acción no se puede deshacer.</strong>
+            {errorEliminar && (
+              <p className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-2.5 py-1.5 text-xs font-medium text-danger">
+                {errorEliminar}
+              </p>
+            )}
+          </>
+        }
+        confirmLabel="Sí, eliminar para siempre"
+        busy={eliminando}
+        onConfirm={confirmarEliminar}
+        onCancel={() => setMuestraAEliminar(null)}
+      />
     </main>
   );
 }

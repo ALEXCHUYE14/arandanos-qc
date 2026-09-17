@@ -267,7 +267,44 @@ export async function pullAll(): Promise<number> {
     await db.muestras.put(nueva);
     merged++;
   }
+
+  // Limpieza de borrados REALES (ver deleteMuestraFromServer() más abajo,
+  // usada desde el Panel de Coordinador de Calidad): una muestra local que
+  // ya estaba "synced" (confirmada con el servidor alguna vez) y que ya NO
+  // aparece en la lista que acaba de bajar, fue borrada de verdad en el
+  // servidor — se borra también en ESTE dispositivo, para que no quede
+  // "fantasma" mostrándose para siempre. Solo se tocan las "synced": una
+  // "pending"/"error"/"conflict" nunca se toca acá (podría ser una muestra
+  // recién creada en este mismo dispositivo que todavía no llegó a subir
+  // por primera vez, y por lo tanto es normal que no esté en esta lista).
+  const idsDelServidor = new Set((muestras as any[]).map((r) => r.id));
+  const locales = await listMuestrasLocal();
+  for (const local of locales) {
+    if (local.sync === "synced" && !idsDelServidor.has(local.id)) {
+      await db.muestras.delete(local.id);
+    }
+  }
+
   return merged;
+}
+
+/**
+ * Borra una muestra DEL SERVIDOR para siempre (y también de este
+ * dispositivo) — a diferencia de deleteMuestraLocal() (lib/db.ts), que
+ * solo la "esconde" de ESTE dispositivo sin tocar el servidor, dejándola
+ * intacta para cualquier otro. Los clamshells se borran solos (ON DELETE
+ * CASCADE, ver supabase/schema.sql). Usada desde el Panel de Coordinador
+ * de Calidad ("Eliminar definitivamente") — las políticas RLS
+ * (muestras_delete) ya exigen ser Jefatura o el propio creador, así que un
+ * intento no autorizado directo contra Supabase se rechaza solo, no hace
+ * falta repetir ese chequeo acá.
+ */
+export async function deleteMuestraFromServer(id: string): Promise<void> {
+  if (!isSupabaseConfigured || !supabase) throw new Error("Sin backend configurado.");
+  const { error } = await withRetry(() => supabase!.from("muestras").delete().eq("id", id));
+  if (error) throw error;
+  await db.muestras.delete(id);
+  await db.tombstones.put({ id, deletedAt: new Date().toISOString() });
 }
 
 /**
