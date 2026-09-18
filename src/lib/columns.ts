@@ -13,7 +13,7 @@
 
 import { DEFECTS, ROLLUP_ORDER, ROLLUP_LABEL } from "./defects";
 import { computeMuestra, computeClamshell, resolveDestinoTier } from "./calc";
-import type { Clamshell, Muestra } from "./types";
+import type { Clamshell, Muestra, Estandar } from "./types";
 
 /** Encabezados literales de las 130 columnas, en orden (col 1 → col 130). */
 export const HEADERS_BASE_DATOS: string[] = [
@@ -141,9 +141,29 @@ export function buildRowBaseDatos(
   row[22] = s(m.empacador);
   row[23] = n(cs.nBayasEvaluadas); // N° BAYAS EVALUADAS — número
   row[24] = n(cs.nClamshell); // N° DE CLAMSHELL EVALUADO — número
-  row[25] = n(cr.nota); // NOTA — número (15 / 5)
-  row[26] = cr.estandar; // CUMPLE / NO CUMPLE — texto
-  row[27] = esPrimerClamshell ? mr.estandarEmpacador : "";
+
+  // Bug real reportado por el cliente ("pongo Nota 15 a mano y al bajar el
+  // Excel sigue saliendo NO CUMPLE"): la Nota MANUAL de la muestra
+  // (m.notaManual, sección Evaluación — el correctivo final que carga el
+  // inspector cuando corrige el veredicto de un empacador) ya se reflejaba
+  // en la cabecera de la app y en el reporte, pero estas 3 columnas del
+  // Excel seguían usando SOLO el cálculo automático por clamshell
+  // (cr.nota/cr.estandar/mr.estandarEmpacador), sin mirar nunca la
+  // corrección manual — así que la corrección quedaba invisible justo en
+  // el documento oficial que de verdad se comparte. Si hay una Nota manual
+  // puesta, pasa a mandar en las 3 (NOTA, ESTÁNDAR /CLAMSHELL y ESTÁNDAR
+  // /EMPACADOR) de forma UNIFORME para toda la muestra — así el Excel
+  // exportado queda internamente consistente con lo que el inspector
+  // decidió al final, en vez de mezclar el veredicto automático de cada
+  // clamshell con la corrección manual solo en algunas columnas.
+  const notaEfectiva = m.notaManual ?? cr.nota;
+  const estandarEfectivo: Estandar = m.notaManual != null ? (m.notaManual === 15 ? "CUMPLE" : "NO CUMPLE") : cr.estandar;
+  const estandarEmpacadorEfectivo: Estandar =
+    m.notaManual != null ? (m.notaManual === 15 ? "CUMPLE" : "NO CUMPLE") : mr.estandarEmpacador;
+
+  row[25] = n(notaEfectiva); // NOTA — número (15 / 5)
+  row[26] = estandarEfectivo; // CUMPLE / NO CUMPLE — texto
+  row[27] = esPrimerClamshell ? estandarEmpacadorEfectivo : "";
   row[28] = s(m.medidaCorrectiva);
 
   // Conteos (30-73, índices 29-72) — números — y OBSERVACIONES (74, índice 73) — texto
