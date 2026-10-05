@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, UserPlus, RefreshCw, Search, Ban, RotateCcw } from "lucide-react";
+import { ArrowLeft, UserPlus, RefreshCw, Search, Ban, RotateCcw, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,23 @@ import { Input, Label } from "@/components/ui/input";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { syncEmpacadoresFromServer } from "@/lib/sync";
 import { useAuth } from "@/lib/store";
+import {
+  parsearEmpacadoresXlsx,
+  descargarEmpacadoresXlsx,
+  type EmpacadorExcel,
+} from "@/lib/empacadoresExcel";
+
+/** Cuántas filas por pedido a Supabase en la importación (cada lote es un upsert por DNI). */
+const LOTE_IMPORT = 200;
+
+interface PreviewImport {
+  nombreArchivo: string;
+  filas: EmpacadorExcel[];
+  errores: string[];
+  tieneColumnaActivo: boolean;
+  nuevos: number;
+  actualizados: number;
+}
 
 interface EmpacadorRow {
   dni: string;
@@ -50,6 +67,13 @@ export default function EmpacadoresPage() {
   const [okCrear, setOkCrear] = useState<string | null>(null);
 
   const [cambiandoDni, setCambiandoDni] = useState<string | null>(null);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [preview, setPreview] = useState<PreviewImport | null>(null);
+  const [leyendoArchivo, setLeyendoArchivo] = useState(false);
+  const [importando, setImportando] = useState(false);
+  const [errorImport, setErrorImport] = useState<string | null>(null);
+  const [okImport, setOkImport] = useState<string | null>(null);
 
   async function cargar() {
     if (!supabase) return;
@@ -142,6 +166,77 @@ export default function EmpacadoresPage() {
     }
   }
 
+  /** Paso 1 de la importación: lee y valida el archivo, NO escribe nada. */
+  async function elegirArchivo(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // permite volver a elegir el mismo archivo después
+    if (!file) return;
+    setPreview(null);
+    setErrorImport(null);
+    setOkImport(null);
+    setLeyendoArchivo(true);
+    try {
+      const resultado = parsearEmpacadoresXlsx(await file.arrayBuffer());
+      const dnisActuales = new Set(lista.map((x) => x.dni));
+      const actualizados = resultado.filas.filter((f) => dnisActuales.has(f.dni)).length;
+      setPreview({
+        nombreArchivo: file.name,
+        filas: resultado.filas,
+        errores: resultado.errores,
+        tieneColumnaActivo: resultado.tieneColumnaActivo,
+        nuevos: resultado.filas.length - actualizados,
+        actualizados,
+      });
+    } catch (err) {
+      console.error("[empacadores] no se pudo leer el Excel", err);
+      setErrorImport("No se pudo leer el archivo. Tiene que ser un Excel (.xlsx o .xls).");
+    } finally {
+      setLeyendoArchivo(false);
+    }
+  }
+
+  /** Paso 2: solo al confirmar, se escribe en lotes (upsert por DNI — repetir el mismo archivo no duplica). */
+  async function confirmarImport() {
+    if (!supabase || !preview || preview.errores.length > 0 || preview.filas.length === 0) return;
+    setImportando(true);
+    setErrorImport(null);
+    setOkImport(null);
+    const total = preview.filas.length;
+    let escritos = 0;
+    try {
+      const payload = preview.filas.map((f) => ({
+        dni: f.dni,
+        nombre: f.nombre,
+        created_by: perfil?.id,
+        // Si el archivo no trae ACTIVO, no se envía la columna: los que ya existen
+        // conservan su estado; los nuevos entran como activos (default de la tabla).
+        ...(preview.tieneColumnaActivo ? { activo: f.activo } : {}),
+      }));
+      for (let i = 0; i < payload.length; i += LOTE_IMPORT) {
+        const lote = payload.slice(i, i + LOTE_IMPORT);
+        const { error } = await supabase.from("empacadores").upsert(lote, { onConflict: "dni" });
+        if (error) throw error;
+        escritos += lote.length;
+      }
+      setOkImport(
+        `Se importaron ${total} empacadores (${preview.nuevos} nuevos, ${preview.actualizados} actualizados).`
+      );
+      setPreview(null);
+      await cargar();
+      syncEmpacadoresFromServer().catch((err) =>
+        console.error("[empacadores] no se pudo refrescar el catálogo local", err)
+      );
+    } catch (err) {
+      console.error("[empacadores] importación interrumpida", err);
+      setErrorImport(
+        `Se interrumpió la importación: se guardaron ${escritos} de ${total}. Volvé a importar el mismo archivo — es seguro, no duplica nada.`
+      );
+      await cargar();
+    } finally {
+      setImportando(false);
+    }
+  }
+
   const filtrada = useMemo(() => {
     const q = filtro.trim().toUpperCase();
     if (!q) return lista;
@@ -207,6 +302,93 @@ export default function EmpacadoresPage() {
             <p className="mt-3 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success">
               {okCrear}
             </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Importación desde Excel */}
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <h2 className="mb-1 text-sm font-semibold text-ink">Importar desde Excel</h2>
+          <p className="mb-3 text-xs text-muted">
+            Primera fila con los encabezados: <span className="font-mono">NOMBRE | DNI | ACTIVO</span>. DNI de 6 a 12
+            números (formato Texto). ACTIVO es opcional: SI o NO (vacío = SI). Si un DNI ya existe, se actualiza su
+            nombre. Podés usar &quot;Exportar&quot; para bajar la lista con esas mismas columnas y editarla.
+          </p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls"
+            className="hidden"
+            onChange={elegirArchivo}
+          />
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+              disabled={leyendoArchivo || importando}
+            >
+              <Upload className="h-4 w-4" /> {leyendoArchivo ? "Leyendo archivo…" : "Importar Excel"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => descargarEmpacadoresXlsx(lista)}
+              disabled={cargando || lista.length === 0}
+            >
+              <Download className="h-4 w-4" /> Exportar Excel
+            </Button>
+          </div>
+
+          {errorImport && (
+            <p className="mt-3 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-medium text-danger">
+              {errorImport}
+            </p>
+          )}
+          {okImport && (
+            <p className="mt-3 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs font-medium text-success">
+              {okImport}
+            </p>
+          )}
+
+          {preview && (
+            <div className="mt-3 rounded-md border border-line p-3">
+              <p className="text-xs font-semibold text-ink">Vista previa — {preview.nombreArchivo}</p>
+              {preview.errores.length > 0 ? (
+                <>
+                  <p className="mt-1 text-xs font-medium text-danger">
+                    No se importó nada. Corregí estos errores en el Excel y volvé a subirlo:
+                  </p>
+                  <ul className="mt-2 max-h-48 list-disc overflow-y-auto pl-5 text-xs text-danger">
+                    {preview.errores.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-xs text-ink">
+                    Se van a cargar <b>{preview.filas.length}</b> empacadores: <b>{preview.nuevos}</b> nuevos y{" "}
+                    <b>{preview.actualizados}</b> que ya existen (se actualiza su nombre
+                    {preview.tieneColumnaActivo ? " y su estado ACTIVO" : ""}).
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <Button onClick={confirmarImport} disabled={importando}>
+                      <Upload className="h-4 w-4" /> {importando ? "Importando…" : `Confirmar importación (${preview.filas.length})`}
+                    </Button>
+                    <Button variant="ghost" onClick={() => setPreview(null)} disabled={importando}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </>
+              )}
+              {preview.errores.length > 0 && (
+                <div className="mt-3">
+                  <Button variant="ghost" size="sm" onClick={() => setPreview(null)}>
+                    Cerrar
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>
